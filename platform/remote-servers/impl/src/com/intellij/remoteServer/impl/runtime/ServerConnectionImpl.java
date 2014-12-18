@@ -290,16 +290,15 @@ public class ServerConnectionImpl<D extends DeploymentConfiguration> implements 
   @NotNull
   @Override
   public Collection<Deployment> getDeployments() {
-    Map<String, Deployment> result;
-    synchronized (myRemoteDeployments) {
-      result = new HashMap<String, Deployment>(myRemoteDeployments);
-    }
+    Set<Deployment> result = new TreeSet<Deployment>(getServer().getType().getDeploymentComparator());
     synchronized (myLocalDeployments) {
-      for (Deployment deployment : myLocalDeployments.values()) {
-        result.put(deployment.getName(), deployment);
-      }
+      result.addAll(myLocalDeployments.values());
     }
-    return result.values();
+
+    synchronized (myRemoteDeployments) {
+      result.addAll(myRemoteDeployments.values());
+    }
+    return result;
   }
 
   @Override
