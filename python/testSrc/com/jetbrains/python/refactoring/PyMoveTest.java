@@ -15,25 +15,33 @@
  */
 package com.jetbrains.python.refactoring;
 
+import com.intellij.ide.fileTemplates.FileTemplate;
+import com.intellij.ide.fileTemplates.FileTemplateManager;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.psi.*;
+import com.intellij.psi.search.ProjectScope;
 import com.intellij.refactoring.move.moveFilesOrDirectories.MoveFilesOrDirectoriesProcessor;
 import com.intellij.testFramework.PlatformTestUtil;
 import com.intellij.util.IncorrectOperationException;
 import com.intellij.util.SystemProperties;
 import com.jetbrains.python.PythonTestUtil;
+import com.jetbrains.python.codeInsight.PyCodeInsightSettings;
 import com.jetbrains.python.fixtures.PyTestCase;
 import com.jetbrains.python.psi.LanguageLevel;
 import com.jetbrains.python.psi.PyClass;
 import com.jetbrains.python.psi.PyFunction;
+import com.jetbrains.python.psi.PyTargetExpression;
 import com.jetbrains.python.psi.stubs.PyClassNameIndex;
 import com.jetbrains.python.psi.stubs.PyFunctionNameIndex;
-import com.jetbrains.python.refactoring.move.PyMoveClassOrFunctionProcessor;
+import com.jetbrains.python.psi.stubs.PyVariableNameIndex;
+import com.jetbrains.python.refactoring.move.PyMoveModuleMembersProcessor;
 import org.jetbrains.annotations.Nullable;
 
 import java.io.IOException;
 import java.util.Collection;
+
+import static com.jetbrains.python.refactoring.move.PyMoveModuleMemberUtil.isMovableModuleMember;
 
 /**
  * @author vlan
@@ -51,6 +59,28 @@ public class PyMoveTest extends PyTestCase {
 
   public void testClass() {
     doMoveSymbolTest("C", "b.py");
+  }
+
+  // PY-11923
+  public void testTopLevelVariable() {
+    doMoveSymbolTest("Y", "b.py");
+  }
+
+  // PY-11923
+  public void testMovableTopLevelAssignmentDetection() {
+    runWithLanguageLevel(LanguageLevel.PYTHON30, new Runnable() {
+      public void run() {
+        myFixture.configureByFile("/refactoring/move/" + getTestName(true) + ".py");
+        assertFalse(isMovableModuleMember(findFirstNamedElement("X1")));
+        assertFalse(isMovableModuleMember(findFirstNamedElement("X3")));
+        assertFalse(isMovableModuleMember(findFirstNamedElement("X2")));
+        assertFalse(isMovableModuleMember(findFirstNamedElement("X4")));
+        assertFalse(isMovableModuleMember(findFirstNamedElement("X5")));
+        assertFalse(isMovableModuleMember(findFirstNamedElement("X6")));
+        assertFalse(isMovableModuleMember(findFirstNamedElement("X7")));
+        assertTrue(isMovableModuleMember(findFirstNamedElement("X8")));
+      }
+    });
   }
 
   // PY-3929
@@ -150,6 +180,21 @@ public class PyMoveTest extends PyTestCase {
     doMoveFileTest("pkg1", "pkg2");
   }
 
+  // PY-14979
+  public void testTemplateAttributesExpansionInCreatedDestinationModule() {
+    final FileTemplateManager instance = FileTemplateManager.getInstance(myFixture.getProject());
+    final FileTemplate template = instance.getInternalTemplate("Python Script");
+    assertNotNull(template);
+    final String oldTemplateContent = template.getText();
+    try {
+      template.setText("NAME = '${NAME}'");
+      doMoveSymbolTest("C", "b.py");
+    }
+    finally {
+      template.setText(oldTemplateContent);
+    }
+  }
+
   // PY-7378
   public void testMoveNamespacePackage1() {
     runWithLanguageLevel(LanguageLevel.PYTHON33, new Runnable() {
@@ -241,6 +286,18 @@ public class PyMoveTest extends PyTestCase {
     doMoveFileTest("pkg/subpkg2", "");
   }
 
+  // PY-15218
+  public void testImportForMovedElementWithPreferredQualifiedImportStyle() {
+    final boolean defaultImportStyle = PyCodeInsightSettings.getInstance().PREFER_FROM_IMPORT;
+    try {
+      PyCodeInsightSettings.getInstance().PREFER_FROM_IMPORT = false;
+      doMoveSymbolTest("bar", "b.py");
+    }
+    finally {
+      PyCodeInsightSettings.getInstance().PREFER_FROM_IMPORT = defaultImportStyle;
+    }
+  }
+
   private void doMoveFileTest(String fileName, String toDirName)  {
     Project project = myFixture.getProject();
     PsiManager manager = PsiManager.getInstance(project);
@@ -285,7 +342,7 @@ public class PyMoveTest extends PyTestCase {
 
     VirtualFile toVirtualFile = dir1.findFileByRelativePath(toFileName);
     String path = toVirtualFile != null ? toVirtualFile.getPath() : (dir1.getPath() + "/" + toFileName);
-    new PyMoveClassOrFunctionProcessor(myFixture.getProject(),
+    new PyMoveModuleMembersProcessor(myFixture.getProject(),
                                        new PsiNamedElement[] {element},
                                        path,
                                        false).run();
@@ -301,13 +358,18 @@ public class PyMoveTest extends PyTestCase {
 
   @Nullable
   private PsiNamedElement findFirstNamedElement(String name) {
-    final Collection<PyClass> classes = PyClassNameIndex.find(name, myFixture.getProject(), false);
+    final Project project = myFixture.getProject();
+    final Collection<PyClass> classes = PyClassNameIndex.find(name, project, false);
     if (classes.size() > 0) {
       return classes.iterator().next();
     }
-    final Collection<PyFunction> functions = PyFunctionNameIndex.find(name, myFixture.getProject());
+    final Collection<PyFunction> functions = PyFunctionNameIndex.find(name, project);
     if (functions.size() > 0) {
       return functions.iterator().next();
+    }
+    final Collection<PyTargetExpression> targets = PyVariableNameIndex.find(name, project, ProjectScope.getAllScope(project));
+    if (targets.size() > 0) {
+      return targets.iterator().next();
     }
     return null;
   }

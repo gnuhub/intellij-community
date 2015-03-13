@@ -15,7 +15,6 @@
  */
 package com.intellij.application.options.codeStyle;
 
-import com.intellij.lang.Language;
 import com.intellij.openapi.application.ApplicationBundle;
 import com.intellij.psi.codeStyle.CodeStyleSettings;
 import com.intellij.psi.codeStyle.CommonCodeStyleSettings;
@@ -53,8 +52,8 @@ import java.util.List;
 /**
  * @author max
  */
-public abstract class OptionTableWithPreviewPanel extends MultilanguageCodeStyleAbstractPanel {
-  private TreeTable myTreeTable;
+public abstract class OptionTableWithPreviewPanel extends CustomizableLanguageCodeStylePanel {
+  protected TreeTable myTreeTable;
   private final JPanel myPanel = new JPanel();
 
   private final List<Option> myOptions = new ArrayList<Option>();
@@ -62,8 +61,7 @@ public abstract class OptionTableWithPreviewPanel extends MultilanguageCodeStyle
   private final Set<String> myAllowedOptions = new THashSet<String>();
   private final Map<String, String> myRenamedFields = new THashMap<String, String>();
   private boolean myShowAllStandardOptions;
-  private boolean isFirstUpdate = true;
-
+  protected boolean isFirstUpdate = true;
 
   public OptionTableWithPreviewPanel(CodeStyleSettings settings) {
     super(settings);
@@ -77,6 +75,8 @@ public abstract class OptionTableWithPreviewPanel extends MultilanguageCodeStyle
     initTables();
 
     myTreeTable = createOptionsTree(getSettings());
+    myTreeTable.setBackground(UIUtil.getPanelBackground());
+    myTreeTable.setBorder(BorderFactory.createEmptyBorder(0, 0, 0, 10));
     JBScrollPane scrollPane = new JBScrollPane(myTreeTable) {
       @Override
       public Dimension getMinimumSize() {
@@ -96,15 +96,7 @@ public abstract class OptionTableWithPreviewPanel extends MultilanguageCodeStyle
     addPanelToWatch(myPanel);
 
     isFirstUpdate = false;
-  }
-
-  @Override
-  protected void onLanguageChange(Language language) {
-    if (myTreeTable.isEditing()) {
-      myTreeTable.getCellEditor().stopCellEditing();
-    }
-    resetImpl(getSettings());
-    myTreeTable.repaint();
+    customizeSettings();
   }
 
   @Override
@@ -402,7 +394,7 @@ public abstract class OptionTableWithPreviewPanel extends MultilanguageCodeStyle
 
     protected Object getSettings(CodeStyleSettings settings) {
       if (clazz != null) return settings.getCustomSettings(clazz);
-      return settings.getCommonSettings(getSelectedLanguage());
+      return settings.getCommonSettings(getDefaultLanguage());
     }
   }
 

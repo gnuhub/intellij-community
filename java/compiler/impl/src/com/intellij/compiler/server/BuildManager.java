@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2014 JetBrains s.r.o.
+ * Copyright 2000-2015 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,6 +20,7 @@ import com.intellij.compiler.CompilerWorkspaceConfiguration;
 import com.intellij.compiler.impl.CompilerUtil;
 import com.intellij.compiler.impl.javaCompiler.javac.JavacConfiguration;
 import com.intellij.compiler.server.impl.BuildProcessClasspathManager;
+import com.intellij.concurrency.JobScheduler;
 import com.intellij.execution.ExecutionAdapter;
 import com.intellij.execution.ExecutionException;
 import com.intellij.execution.ExecutionManager;
@@ -84,6 +85,7 @@ import com.intellij.util.containers.IntArrayList;
 import com.intellij.util.io.storage.HeavyProcessLatch;
 import com.intellij.util.messages.MessageBusConnection;
 import com.intellij.util.net.NetUtils;
+import com.intellij.util.text.DateFormatUtil;
 import gnu.trove.THashSet;
 import io.netty.bootstrap.ServerBootstrap;
 import io.netty.channel.Channel;
@@ -93,6 +95,7 @@ import io.netty.handler.codec.protobuf.ProtobufDecoder;
 import io.netty.handler.codec.protobuf.ProtobufEncoder;
 import io.netty.handler.codec.protobuf.ProtobufVarint32FrameDecoder;
 import io.netty.handler.codec.protobuf.ProtobufVarint32LengthFieldPrepender;
+import io.netty.util.internal.ThreadLocalRandom;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.jetbrains.ide.PooledThreadExecutor;
@@ -104,12 +107,15 @@ import org.jetbrains.jps.cmdline.ClasspathBootstrap;
 import org.jetbrains.jps.incremental.Utils;
 import org.jetbrains.jps.model.serialization.JpsGlobalLoader;
 
+import javax.swing.*;
 import javax.tools.*;
 import java.awt.*;
 import java.io.File;
+import java.io.FileFilter;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.nio.charset.Charset;
+import java.text.SimpleDateFormat;
 import java.util.*;
 import java.util.List;
 import java.util.concurrent.*;
@@ -125,11 +131,13 @@ public class BuildManager implements ApplicationComponent{
   public static final Key<Boolean> ALLOW_AUTOMAKE = Key.create("_allow_automake_when_process_is_active_");
   private static final Key<String> FORCE_MODEL_LOADING_PARAMETER = Key.create(BuildParametersKeys.FORCE_MODEL_LOADING);
   private static final Key<CharSequence> STDERR_OUTPUT = Key.create("_process_launch_errors_");
+  private static final SimpleDateFormat USAGE_STAMP_DATE_FORMAT = new SimpleDateFormat("dd.MM.yyyy");
 
   private static final Logger LOG = Logger.getInstance("#com.intellij.compiler.server.BuildManager");
   private static final String COMPILER_PROCESS_JDK_PROPERTY = "compiler.process.jdk";
   public static final String SYSTEM_ROOT = "compile-server";
   public static final String TEMP_DIR_NAME = "_temp_";
+  // do not make static in order not to access application on class load
   private final boolean IS_UNIT_TEST_MODE;
   private static final String IWS_EXTENSION = ".iws";
   private static final String IPR_EXTENSION = ".ipr";
@@ -203,6 +211,42 @@ public class BuildManager implements ApplicationComponent{
     private boolean shouldSaveDocuments() {
       final Project contextProject = getCurrentContextProject();
       return contextProject != null && canStartAutoMake(contextProject);
+    }
+  };
+
+  private final Runnable myGCTask = new Runnable() {
+    // should be executed from the main queue with runCommand!
+    @Override
+    public void run() {
+      // todo: make customizable in UI?
+      final int unusedThresholdDays = Registry.intValue("compiler.build.data.unused.threshold", -1);
+      if (unusedThresholdDays <= 0) {
+        return;
+      }
+      final File buildSystemDir = getBuildSystemDirectory();
+      final File[] dirs = buildSystemDir.listFiles(new FileFilter() {
+        @Override
+        public boolean accept(File pathname) {
+          return pathname.isDirectory() && !TEMP_DIR_NAME.equals(pathname.getName());
+        }
+      });
+      final Date now = new Date();
+      for (File buildDataProjectDir : dirs) {
+        final File usageFile = getUsageFile(buildDataProjectDir);
+        if (usageFile.exists()) {
+          final Pair<Date, File> usageData = readUsageFile(usageFile);
+          if (usageData != null) {
+            final File projectFile = usageData.second;
+            if ((projectFile != null && !projectFile.exists()) || DateFormatUtil.getDifferenceInDays(usageData.first, now) > unusedThresholdDays) {
+              LOG.info("Clearing project build data because the project does not exist or was not opened for more than " + unusedThresholdDays + " days: " + buildDataProjectDir.getPath());
+              FileUtil.delete(buildDataProjectDir);
+            }
+          }
+        }
+        else {
+          updateUsageFile(null, buildDataProjectDir); // set usage stamp to start countdown
+        }
+      }
     }
   };
 
@@ -296,6 +340,13 @@ public class BuildManager implements ApplicationComponent{
         stopListening();
       }
     });
+
+    JobScheduler.getScheduler().scheduleAtFixedRate(new Runnable() {
+      @Override
+      public void run() {
+        runCommand(myGCTask);
+      }
+    }, 3, 180, TimeUnit.MINUTES);
   }
 
   private List<Project> getOpenProjects() {
@@ -600,7 +651,8 @@ public class BuildManager implements ApplicationComponent{
     final Map<String, String> userData, final DefaultMessageHandler messageHandler) {
 
     final String projectPath = getProjectPath(project);
-    final BuilderMessageHandler handler = new NotifyingMessageHandler(project, messageHandler, messageHandler instanceof AutoMakeMessageHandler);
+    final boolean isAutomake = messageHandler instanceof AutoMakeMessageHandler;
+    final BuilderMessageHandler handler = new NotifyingMessageHandler(project, messageHandler, isAutomake);
     try {
       ensureListening();
     }
@@ -646,6 +698,7 @@ public class BuildManager implements ApplicationComponent{
           CmdlineRemoteProto.Message.ControllerMessage.GlobalSettings.newBuilder().setGlobalOptionsPath(PathManager.getOptionsPath()).build();
         CmdlineRemoteProto.Message.ControllerMessage.FSEvent currentFSChanges;
         final SequentialTaskExecutor projectTaskQueue;
+        final boolean needRescan;
         synchronized (myProjectDataMap) {
           final ProjectData data = getProjectData(projectPath);
           if (isRebuild) {
@@ -659,7 +712,8 @@ public class BuildManager implements ApplicationComponent{
                      "; DELETED: " +
                      new HashSet<String>(convertToStringPaths(data.myDeleted)));
           }
-          currentFSChanges = data.getAndResetRescanFlag() ? null : data.createNextEvent();
+          needRescan = data.getAndResetRescanFlag();
+          currentFSChanges = needRescan ? null : data.createNextEvent();
           projectTaskQueue = data.taskQueue;
         }
 
@@ -703,6 +757,22 @@ public class BuildManager implements ApplicationComponent{
                   errorsOnLaunch = STDERR_OUTPUT.get(processHandler);
                 }
                 else {
+                  if (isAutomake && needRescan) {
+                    // if project state was cleared because of roots changed or this is the first compilation after project opening,
+                    // ensure project model is saved on disk, so that automake sees the latest model state.
+                    // For ordinary make all project, app settings and unsaved docs are always saved before build starts.
+                    try {
+                      SwingUtilities.invokeAndWait(new Runnable() {
+                        public void run() {
+                          project.save();
+                        }
+                      });
+                    }
+                    catch(Throwable e) {
+                      LOG.info(e);
+                    }
+                  }
+                  
                   processHandler = launchBuildProcess(project, myListenPort, sessionId, false);
                   errorsOnLaunch = new StringBuffer();
                   processHandler.addProcessListener(new StdOutputCollector((StringBuffer)errorsOnLaunch));
@@ -734,7 +804,7 @@ public class BuildManager implements ApplicationComponent{
                 myBuildsInProgress.remove(projectPath);
                 notifySessionTerminationIfNeeded(sessionId, execFailure);
 
-                if (isProcessPreloadingEnabled() && !project.isDisposed()) {
+                if (isProcessPreloadingEnabled(project)) {
                   runCommand(new Runnable() {
                     public void run() {
                       if (!myPreloadedBuilds.containsKey(projectPath)) {
@@ -763,9 +833,20 @@ public class BuildManager implements ApplicationComponent{
     return _future;
   }
 
-  private static boolean isProcessPreloadingEnabled() {
-    // automatically disable process preloading when debugging
-    return Registry.is("compiler.process.preload") && Registry.intValue("compiler.process.debug.port") <= 0 ;
+  private boolean isProcessPreloadingEnabled(Project project) {
+    // automatically disable process preloading when debugging or testing
+    if (IS_UNIT_TEST_MODE || !Registry.is("compiler.process.preload") || Registry.intValue("compiler.process.debug.port") > 0) {
+      return false;
+    }
+    if (project.isDisposed()) {
+      return true;
+    }
+    for (BuildProcessParametersProvider provider : project.getExtensions(BuildProcessParametersProvider.EP_NAME)) {
+      if (!provider.isProcessPreloadingEnabled()) {
+        return false;
+      }
+    }
+    return true;
   }
 
   private void notifySessionTerminationIfNeeded(UUID sessionId, @Nullable Throwable execFailure) {
@@ -834,7 +915,7 @@ public class BuildManager implements ApplicationComponent{
     return projectTaskQueue.submit(new Callable<Pair<RequestFuture<PreloadedProcessMessageHandler>, OSProcessHandler>>() {
       public Pair<RequestFuture<PreloadedProcessMessageHandler>, OSProcessHandler> call() throws Exception {
         if (project.isDisposed()) {
-          throw new Exception("project " + project.getName()+ " already disposed");
+          return null;
         }
         final RequestFuture<PreloadedProcessMessageHandler> future = new RequestFuture<PreloadedProcessMessageHandler>(new PreloadedProcessMessageHandler(), UUID.randomUUID(), new CancelBuildSessionAction<PreloadedProcessMessageHandler>());
         try {
@@ -912,7 +993,7 @@ public class BuildManager implements ApplicationComponent{
 
       // validate tools.jar presence
       final JavaSdkType projectJdkType = (JavaSdkType)projectJdk.getSdkType();
-      if (projectJdk.equals(internalJdk)) {
+      if (FileUtil.pathsEqual(projectJdk.getHomePath(), internalJdk.getHomePath())) {
         // important: because internal JDK can be either JDK or JRE,
         // this is the most universal way to obtain tools.jar path in this particular case
         final JavaCompiler systemCompiler = ToolProvider.getSystemJavaCompiler();
@@ -975,6 +1056,9 @@ public class BuildManager implements ApplicationComponent{
       cmdLine.addParameter("-Djava.net.preferIPv4Stack=true");
     }
 
+    // this will make netty initialization faster on some systems
+    cmdLine.addParameter("-Dio.netty.initialSeedUniquifier=" + ThreadLocalRandom.getInitialSeedUniquifier());
+
     boolean isProfilingMode = false;
     final String additionalOptions = config.COMPILER_PROCESS_ADDITIONAL_VM_OPTIONS;
     if (!StringUtil.isEmpty(additionalOptions)) {
@@ -989,7 +1073,7 @@ public class BuildManager implements ApplicationComponent{
     }
 
     if (isProfilingMode) {
-      cmdLine.addParameter("-agentlib:yjpagent=disablej2ee,disablealloc,delay=10000,sessionname=ExternalBuild");
+      cmdLine.addParameter("-agentlib:yjpagent=disablealloc,delay=10000,sessionname=ExternalBuild");
     }
 
     // debugging
@@ -1007,7 +1091,8 @@ public class BuildManager implements ApplicationComponent{
     cmdLine.setCharset(mySystemCharset);
     cmdLine.addParameter("-D" + CharsetToolkit.FILE_ENCODING_PROPERTY + "=" + mySystemCharset.name());
     cmdLine.addParameter("-D" + JpsGlobalLoader.FILE_TYPES_COMPONENT_NAME_KEY + "=" + FileTypeManagerImpl.getFileTypeComponentName());
-    for (String name : new String[]{"user.language", "user.country", "user.region", PathManager.PROPERTY_PATHS_SELECTOR}) {
+    String[] propertiesToPass = {"user.language", "user.country", "user.region", PathManager.PROPERTY_PATHS_SELECTOR, "idea.case.sensitive.fs"};
+    for (String name : propertiesToPass) {
       final String value = System.getProperty(name);
       if (value != null) {
         cmdLine.addParameter("-D" + name + "=" + value);
@@ -1092,6 +1177,50 @@ public class BuildManager implements ApplicationComponent{
   public File getProjectSystemDirectory(Project project) {
     final String projectPath = getProjectPath(project);
     return projectPath != null? Utils.getDataStorageRoot(getBuildSystemDirectory(), projectPath) : null;
+  }
+
+  private static File getUsageFile(@NotNull File projectSystemDir) {
+    return new File(projectSystemDir, "ustamp");
+  }
+
+  private static void updateUsageFile(@Nullable Project project, @NotNull File projectSystemDir) {
+    final File usageFile = getUsageFile(projectSystemDir);
+    StringBuilder content = new StringBuilder();
+    try {
+      synchronized (USAGE_STAMP_DATE_FORMAT) {
+        content.append(USAGE_STAMP_DATE_FORMAT.format(System.currentTimeMillis()));
+      }
+      if (project != null && !project.isDisposed()) {
+        final String projectFilePath = project.getProjectFilePath();
+        if (!StringUtil.isEmptyOrSpaces(projectFilePath)) {
+          content.append("\n").append(FileUtil.toCanonicalPath(projectFilePath));
+        }
+      }
+      FileUtil.writeToFile(usageFile, content.toString());
+    }
+    catch (Throwable e) {
+      LOG.info(e);
+    }
+  }
+
+  @Nullable
+  private Pair<Date, File> readUsageFile(File usageFile) {
+    try {
+      final List<String> lines = FileUtil.loadLines(usageFile, CharsetToolkit.UTF8_CHARSET.name());
+      if (!lines.isEmpty()) {
+        final String dateString = lines.get(0);
+        final Date date;
+        synchronized (USAGE_STAMP_DATE_FORMAT) {
+          date = USAGE_STAMP_DATE_FORMAT.parse(dateString);
+        }
+        final File projectFile = lines.size() > 1? new File(lines.get(1)) : null;
+        return Pair.create(date, projectFile);
+      }
+    }
+    catch (Throwable e) {
+      LOG.info(e);
+    }
+    return null;
   }
 
   private static int getMinorVersion(String vs) {
@@ -1358,6 +1487,15 @@ public class BuildManager implements ApplicationComponent{
       StartupManager.getInstance(project).registerPostStartupActivity(new Runnable() {
         @Override
         public void run() {
+          runCommand(new Runnable() {
+            @Override
+            public void run() {
+              final File projectSystemDir = getProjectSystemDirectory(project);
+              if (projectSystemDir != null) {
+                updateUsageFile(project, projectSystemDir);
+              }
+            }
+          });
           scheduleAutoMake(); // run automake after project opened
         }
       });

@@ -278,6 +278,21 @@ class Test {
     assert !myFixture.filterAvailableIntentions("Import class")
   }
 
+  public void "test don't import class if qualified name is not valid"() {
+    myFixture.addClass('''
+package a..p;
+public class MMM {}
+''')
+    myFixture.configureByText 'a.java', '''
+class Test {
+    {
+      MM<caret>M m;
+    }
+}
+'''
+    assert !myFixture.filterAvailableIntentions("Import class")
+  }
+
   public void "test don't import class in assignment"() {
     myFixture.configureByText 'a.java', '''
 class Test {
@@ -289,7 +304,57 @@ class Test {
     assert !myFixture.filterAvailableIntentions("Import class")
   }
 
-  public void "test allow to add import from javadoc"() {
+  public void "test don't import class in qualified reference at reference name"() {
+    myFixture.configureByText 'a.java', '''
+class Test {
+    {
+      Test.Te<caret>st
+    }
+}
+'''
+    assert !myFixture.filterAvailableIntentions("Import class")
+  }
+
+  public void "test don't import class in qualified reference at foreign place"() {
+    myFixture.configureByText 'a.java', '''
+class Test {
+    {
+      String s = "";
+      s.<caret>
+      String p = "";
+    }
+}
+'''
+    assert !myFixture.filterAvailableIntentions("Import class")
+  }
+
+    public void "test allow to add import from javadoc"() {
+    myFixture.configureByText 'a.java', '''
+class Test {
+
+  /**
+   * {@link java.util.Ma<caret>p}
+   */
+  void run() {
+  }
+}
+'''
+    reimportClass()
+    myFixture.checkResult '''\
+import java.util.Map;
+
+class Test {
+
+  /**
+   * {@link Map}
+   */
+  void run() {
+  }
+}
+'''
+  }
+
+  public void "test do not add import for default package"() {
     myFixture.configureByText 'a.java', '''
 class Test {
 
@@ -301,9 +366,7 @@ class Test {
 }
 '''
     reimportClass()
-    myFixture.checkResult '''\
-import java.lang.Math;
-
+    myFixture.checkResult '''
 class Test {
 
   /**

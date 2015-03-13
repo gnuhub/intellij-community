@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2014 JetBrains s.r.o.
+ * Copyright 2000-2015 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,7 +17,6 @@ package com.intellij.openapi.application.impl;
 
 import com.intellij.BundleBase;
 import com.intellij.CommonBundle;
-import com.intellij.diagnostic.PerformanceWatcher;
 import com.intellij.diagnostic.ThreadDumper;
 import com.intellij.ide.*;
 import com.intellij.ide.plugins.IdeaPluginDescriptor;
@@ -78,10 +77,7 @@ import java.io.File;
 import java.io.IOException;
 import java.lang.reflect.Method;
 import java.util.List;
-import java.util.concurrent.Callable;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Future;
-import java.util.concurrent.TimeUnit;
+import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
@@ -119,8 +115,6 @@ public class ApplicationImpl extends PlatformComponentManagerImpl implements App
   private final Disposable myLastDisposable = Disposer.newDisposable(); // will be disposed last
 
   private final AtomicBoolean mySaveSettingsIsInProgress = new AtomicBoolean(false);
-  @SuppressWarnings({"UseOfArchaicSystemPropertyAccessors"})
-  private static final int ourDumpThreadsOnLongWriteActionWaiting = Integer.getInteger("dump.threads.on.long.write.action.waiting", 0);
 
   private final ExecutorService ourThreadExecutorsService = PooledThreadExecutor.INSTANCE;
   private boolean myIsFiringLoadingEvent = false;
@@ -647,6 +641,75 @@ public class ApplicationImpl extends PlatformComponentManagerImpl implements App
     return !progress.isCanceled();
   }
 
+
+  @Override
+  public boolean runProcessWithProgressSynchronouslyInReadAction(@Nullable final Project project, @NotNull final String progressTitle,
+                                                                 final boolean canBeCanceled,
+                                                                 final String cancelText, final JComponent parentComponent,
+                                                                 @NotNull final Runnable process) {
+    assertIsDispatchThread();
+    boolean writeAccessAllowed = isInsideWriteActionEDTOnly();
+    if (writeAccessAllowed // Disallow running process in separate thread from under write action.
+                           // The thread will deadlock trying to get read action otherwise.
+      ) {
+      throw new IncorrectOperationException("Starting process with progress from within write action makes no sense");
+    }
+
+    final ProgressWindow progress = new ProgressWindow(canBeCanceled, false, project, parentComponent, cancelText);
+    // in case of abrupt application exit when 'ProgressManager.getInstance().runProcess(process, progress)' below
+    // does not have a chance to run, and as a result the progress won't be disposed
+    Disposer.register(this, progress);
+
+    progress.setTitle(progressTitle);
+
+    final CountDownLatch readActionAcquired = new CountDownLatch(1);
+    final CountDownLatch modalityEntered = new CountDownLatch(1);
+    executeOnPooledThread(new Runnable() {
+      @Override
+      public void run() {
+        try {
+          ApplicationManager.getApplication().runReadAction(new Runnable() {
+            @Override
+            public void run() {
+              readActionAcquired.countDown();
+              waitFor(modalityEntered);
+              ProgressManager.getInstance().runProcess(process, progress);
+            }
+          });
+        }
+        catch (ProcessCanceledException e) {
+          progress.cancel();
+          // ok to ignore.
+        }
+        catch (RuntimeException e) {
+          progress.cancel();
+          throw e;
+        }
+      }
+    });
+
+    waitFor(readActionAcquired);
+    progress.startBlocking(new Runnable() {
+      @Override
+      public void run() {
+        modalityEntered.countDown();
+      }
+    });
+
+    LOG.assertTrue(!progress.isRunning());
+
+    return !progress.isCanceled();
+  }
+
+  private static void waitFor(@NotNull CountDownLatch modalityEntered) {
+    try {
+      modalityEntered.await();
+    }
+    catch (InterruptedException e) {
+      throw new RuntimeException(e);
+    }
+  }
+
   @Override
   public void invokeAndWait(@NotNull Runnable runnable, @NotNull ModalityState modalityState) {
     Status status = getStatus();
@@ -1036,12 +1099,12 @@ public class ApplicationImpl extends PlatformComponentManagerImpl implements App
 
   private static void assertIsDispatchThread(Status status, @NotNull String message) {
     if (isDispatchThread(status)) return;
-    LOG.error(message,
-              "EventQueue.isDispatchThread()="+EventQueue.isDispatchThread(),
-              "isDispatchThread()="+isDispatchThread(getStatus()),
-              "Toolkit.getEventQueue()="+Toolkit.getDefaultToolkit().getSystemEventQueue(),
-              "Current thread: " + describe(Thread.currentThread()),
-              "SystemEventQueueThread: " + describe(getEventQueueThread()) +"\n"+ ThreadDumper.dumpThreadsToString()+"\n-----------");
+    throw new RuntimeException(message +
+              " EventQueue.isDispatchThread()="+EventQueue.isDispatchThread()+
+              " isDispatchThread()="+isDispatchThread(getStatus())+
+              " Toolkit.getEventQueue()="+Toolkit.getDefaultToolkit().getSystemEventQueue()+
+              " Current thread: " + describe(Thread.currentThread())+
+              " SystemEventQueueThread: " + describe(getEventQueueThread()) +"\n"+ ThreadDumper.dumpThreadsToString()+"\n-----------");
   }
 
   @Override
@@ -1166,6 +1229,7 @@ public class ApplicationImpl extends PlatformComponentManagerImpl implements App
   }
 
   private void startWrite(Class clazz) {
+    assertIsDispatchThread(getStatus(), "Write access is allowed from event dispatch thread only");
     boolean writeActionPending = myWriteActionPending;
     myWriteActionPending = true;
 
@@ -1177,24 +1241,7 @@ public class ApplicationImpl extends PlatformComponentManagerImpl implements App
         if (!isWriteAccessAllowed()) {
           assertNoPsiLock();
         }
-        if (!myLock.writeLock().tryLock()) {
-          final AtomicBoolean lockAcquired = new AtomicBoolean(false);
-          if (ourDumpThreadsOnLongWriteActionWaiting > 0) {
-            executeOnPooledThread(new Runnable() {
-              @Override
-              public void run() {
-                while (!lockAcquired.get()) {
-                  TimeoutUtil.sleep(ourDumpThreadsOnLongWriteActionWaiting);
-                  if (!lockAcquired.get()) {
-                    PerformanceWatcher.getInstance().dumpThreads(true);
-                  }
-                }
-              }
-            });
-          }
-          myLock.writeLock().lockInterruptibly();
-          lockAcquired.set(true);
-        }
+        myLock.writeLock().lockInterruptibly();
       }
       catch (InterruptedException e) {
         throw new RuntimeInterruptedException(e);
@@ -1221,7 +1268,6 @@ public class ApplicationImpl extends PlatformComponentManagerImpl implements App
   @NotNull
   @Override
   public AccessToken acquireWriteActionLock(Class clazz) {
-    assertIsDispatchThread(getStatus(), "Write access is allowed from event dispatch thread only");
     return new WriteAccessToken(clazz);
   }
 
@@ -1368,8 +1414,10 @@ public class ApplicationImpl extends PlatformComponentManagerImpl implements App
     myDispatcher.getMulticaster().writeActionFinished(action);
   }
 
-  // public for testing purposes
-  public void _saveSettings() {
+  @Override
+  public void saveSettings() {
+    if (myDoNotSave) return;
+
     if (mySaveSettingsIsInProgress.compareAndSet(false, true)) {
       try {
         StoreUtil.save(getStateStore(), null);
@@ -1378,12 +1426,6 @@ public class ApplicationImpl extends PlatformComponentManagerImpl implements App
         mySaveSettingsIsInProgress.set(false);
       }
     }
-  }
-
-  @Override
-  public void saveSettings() {
-    if (myDoNotSave) return;
-    _saveSettings();
   }
 
   @Override

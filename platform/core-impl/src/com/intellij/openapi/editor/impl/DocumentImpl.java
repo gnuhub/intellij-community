@@ -332,11 +332,11 @@ public class DocumentImpl extends UserDataHolderBase implements DocumentEx {
     }
   }
 
-  public ReadonlyFragmentModificationHandler getReadonlyFragmentModificationHandler() {
+  ReadonlyFragmentModificationHandler getReadonlyFragmentModificationHandler() {
     return myReadonlyFragmentModificationHandler;
   }
 
-  public void setReadonlyFragmentModificationHandler(final ReadonlyFragmentModificationHandler readonlyFragmentModificationHandler) {
+  void setReadonlyFragmentModificationHandler(final ReadonlyFragmentModificationHandler readonlyFragmentModificationHandler) {
     myReadonlyFragmentModificationHandler = readonlyFragmentModificationHandler;
   }
 
@@ -364,13 +364,13 @@ public class DocumentImpl extends UserDataHolderBase implements DocumentEx {
   }
 
   @TestOnly
-  public int getRangeMarkersSize() {
+  int getRangeMarkersSize() {
     return myRangeMarkers.size() + myPersistentRangeMarkers.size();
   }
 
   @TestOnly
-  public int getRangeMarkersNodeSize() {
-    return myRangeMarkers.nodeSize()+myPersistentRangeMarkers.size();
+  int getRangeMarkersNodeSize() {
+    return myRangeMarkers.nodeSize()+myPersistentRangeMarkers.nodeSize();
   }
 
   @Override
@@ -693,7 +693,7 @@ public class DocumentImpl extends UserDataHolderBase implements DocumentEx {
     getLineSet().clearModificationFlags();
   }
 
-  public void clearLineModificationFlagsExcept(@NotNull int[] caretLines) {
+  void clearLineModificationFlagsExcept(@NotNull int[] caretLines) {
     IntArrayList modifiedLines = new IntArrayList(caretLines.length);
     LineSet lineSet = getLineSet();
     for (int line : caretLines) {
@@ -716,8 +716,8 @@ public class DocumentImpl extends UserDataHolderBase implements DocumentEx {
     assertNotNestedModification();
     boolean enableRecursiveModifications = Registry.is("enable.recursive.document.changes"); // temporary property, to remove in IDEA 16
     myChangeInProgress = true;
-    final DocumentEvent event;
     try {
+      final DocumentEvent event;
       try {
         event = doBeforeChangedUpdate(offset, oldString, newString, wholeTextReplaced);
       }
@@ -742,11 +742,9 @@ public class DocumentImpl extends UserDataHolderBase implements DocumentEx {
     Application app = ApplicationManager.getApplication();
     if (app != null) {
       FileDocumentManager manager = FileDocumentManager.getInstance();
-      if (manager != null) {
-        VirtualFile file = manager.getFile(this);
-        if (file != null && !file.isValid()) {
-          LOG.error("File of this document has been deleted.");
-        }
+      VirtualFile file = manager.getFile(this);
+      if (file != null && !file.isValid()) {
+        LOG.error("File of this document has been deleted.");
       }
     }
     assertInsideCommand();
@@ -772,10 +770,10 @@ public class DocumentImpl extends UserDataHolderBase implements DocumentEx {
   }
 
   private void assertInsideCommand() {
+    if (!myAssertThreading) return;
     CommandProcessor commandProcessor = CommandProcessor.getInstance();
     if (!commandProcessor.isUndoTransparentActionInProgress() &&
-        commandProcessor.getCurrentCommand() == null &&
-      myAssertThreading) {
+        commandProcessor.getCurrentCommand() == null) {
       throw new IncorrectOperationException("Must not change document outside command or undo-transparent action. See com.intellij.openapi.command.WriteCommandAction or com.intellij.openapi.command.CommandProcessor");
     }
   }
@@ -878,9 +876,9 @@ public class DocumentImpl extends UserDataHolderBase implements DocumentEx {
     private final Ref<DocumentListener[]> myCachedDocumentListenersRef;
     private final List<DocumentListener> myDocumentListeners;
 
-    public DocumentListenerDisposable(@NotNull DocumentListener listener,
-                                      @NotNull Ref<DocumentListener[]> cachedDocumentListenersRef,
-                                      @NotNull List<DocumentListener> documentListeners) {
+    private DocumentListenerDisposable(@NotNull DocumentListener listener,
+                                       @NotNull Ref<DocumentListener[]> cachedDocumentListenersRef,
+                                       @NotNull List<DocumentListener> documentListeners) {
       myListener = listener;
       myCachedDocumentListenersRef = cachedDocumentListenersRef;
       myDocumentListeners = documentListeners;
@@ -941,6 +939,7 @@ public class DocumentImpl extends UserDataHolderBase implements DocumentEx {
 
   @Override
   public final int getLineCount() {
+    if (getTextLength() == 0) return 0;
     int lineCount = getLineSet().getLineCount();
     assert lineCount >= 0;
     return lineCount;
@@ -1024,7 +1023,9 @@ public class DocumentImpl extends UserDataHolderBase implements DocumentEx {
 
   @Override
   public final void setInBulkUpdate(boolean value) {
-    ApplicationManager.getApplication().assertIsDispatchThread();
+    if (myAssertThreading) {
+      ApplicationManager.getApplication().assertIsDispatchThread();
+    }
     if (myDoingBulkUpdate == value) {
       // do not fire listeners or otherwise updateStarted() will be called more times than updateFinished()
       return;
@@ -1085,22 +1086,26 @@ public class DocumentImpl extends UserDataHolderBase implements DocumentEx {
     return "DocumentImpl[" + FileDocumentManager.getInstance().getFile(this) + "]";
   }
 
-  public void requestTabTracking() {
-    ApplicationManager.getApplication().assertIsDispatchThread();
+  void requestTabTracking() {
+    if (myAssertThreading) {
+      ApplicationManager.getApplication().assertIsDispatchThread();
+    }
     if (myTabTrackingRequestors++ == 0) {
       myMightContainTabs = false;
       updateMightContainTabs(myText);
     }
   }
 
-  public void giveUpTabTracking() {
-    ApplicationManager.getApplication().assertIsDispatchThread();
+  void giveUpTabTracking() {
+    if (myAssertThreading) {
+      ApplicationManager.getApplication().assertIsDispatchThread();
+    }
     if (--myTabTrackingRequestors == 0) {
       myMightContainTabs = true;
     }
   }
 
-  public boolean mightContainTabs() {
+  boolean mightContainTabs() {
     return myMightContainTabs;
   }
 

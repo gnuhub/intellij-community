@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2014 JetBrains s.r.o.
+ * Copyright 2000-2015 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,6 +15,7 @@
  */
 package com.intellij.openapi.updateSettings.impl;
 
+import com.intellij.CommonBundle;
 import com.intellij.ide.BrowserUtil;
 import com.intellij.ide.IdeBundle;
 import com.intellij.ide.plugins.IdeaPluginDescriptor;
@@ -23,6 +24,8 @@ import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.application.ApplicationNamesInfo;
 import com.intellij.openapi.application.PathManager;
 import com.intellij.openapi.application.ex.ApplicationInfoEx;
+import com.intellij.openapi.diagnostic.Logger;
+import com.intellij.openapi.ui.Messages;
 import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.ui.BrowserHyperlinkListener;
 import com.intellij.ui.JBColor;
@@ -34,6 +37,7 @@ import org.jetbrains.annotations.NotNull;
 import javax.swing.*;
 import java.awt.event.ActionEvent;
 import java.io.File;
+import java.io.IOException;
 import java.util.Collection;
 import java.util.List;
 
@@ -97,7 +101,7 @@ class UpdateInfoDialog extends AbstractUpdateDialog {
 
         @Override
         public void actionPerformed(ActionEvent e) {
-          downloadPatch();
+          downloadPatchAndRestart();
         }
       });
     }
@@ -138,16 +142,24 @@ class UpdateInfoDialog extends AbstractUpdateDialog {
     return IdeBundle.message("updates.remind.later.button");
   }
 
-  private void downloadPatch() {
-    UpdateChecker.DownloadPatchResult result = UpdateChecker.installPlatformUpdate(myPatch, myLatestBuild.getNumber(), myForceHttps);
-    if (result == UpdateChecker.DownloadPatchResult.SUCCESS) {
+  private void downloadPatchAndRestart() {
+    try {
+      UpdateChecker.installPlatformUpdate(myPatch, myLatestBuild.getNumber(), myForceHttps);
+
       if (myUpdatedPlugins != null && !myUpdatedPlugins.isEmpty()) {
         new PluginUpdateInfoDialog(getContentPanel(), myUpdatedPlugins).show();
       }
+
       restart();
     }
-    else if (result == UpdateChecker.DownloadPatchResult.FAILED) {
-      openDownloadPage();
+    catch (IOException e) {
+      Logger.getInstance(UpdateChecker.class).warn(e);
+      if (Messages.showOkCancelDialog(IdeBundle.message("update.downloading.patch.error", e.getMessage()),
+                                      IdeBundle.message("updates.error.connection.title"),
+                                      IdeBundle.message("updates.download.page.button"), CommonBundle.message("button.cancel"),
+                                      Messages.getErrorIcon()) == Messages.OK) {
+        openDownloadPage();
+      }
     }
   }
 

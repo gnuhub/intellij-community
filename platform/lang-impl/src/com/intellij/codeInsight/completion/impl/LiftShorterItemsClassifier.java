@@ -34,7 +34,7 @@ import static com.intellij.util.containers.ContainerUtil.newIdentityTroveSet;
 */
 public class LiftShorterItemsClassifier extends Classifier<LookupElement> {
   private final TreeSet<String> mySortedStrings = new TreeSet<String>();
-  private final MultiMap<String, LookupElement> myElements = MultiMap.createSmartList();
+  private final MultiMap<String, LookupElement> myElements = MultiMap.createSmart();
   private final Map<LookupElement, FList<LookupElement>> myToLift = newIdentityHashMap();
   private final IdentityHashMap<FList<LookupElement>, IdentityHashMap<LookupElement, FList<LookupElement>>> myPrepends = newIdentityHashMap();
   private final String myName;
@@ -55,20 +55,25 @@ public class LiftShorterItemsClassifier extends Classifier<LookupElement> {
     myCount++;
 
     final Set<String> strings = added.getAllLookupStrings();
-    for (String string : strings) {
-      if (string.length() == 0) continue;
-
-      myElements.putValue(string, added);
-      mySortedStrings.add(string);
-      final NavigableSet<String> after = mySortedStrings.tailSet(string, false);
-      for (String s : after) {
-        if (!s.startsWith(string)) {
-          break;
-        }
-        for (LookupElement longer : myElements.get(s)) {
-          updateLongerItem(added, longer);
+    try {
+      for (String string : strings) {
+        if (string.length() == 0) continue;
+  
+        myElements.putValue(string, added);
+        mySortedStrings.add(string);
+        final NavigableSet<String> after = mySortedStrings.tailSet(string, false);
+        for (String s : after) {
+          if (!s.startsWith(string)) {
+            break;
+          }
+          for (LookupElement longer : myElements.get(s)) {
+            updateLongerItem(added, longer);
+          }
         }
       }
+    }
+    catch (ConcurrentModificationException e) {
+      throw new RuntimeException("Error while traversing lookup strings of " + added + " of " + added.getClass(), e);
     }
     myNext.addElement(added, context);
 

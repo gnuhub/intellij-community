@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2014 JetBrains s.r.o.
+ * Copyright 2000-2015 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,7 +22,6 @@ import com.intellij.ide.util.PropertiesComponent;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.ui.DialogWrapper;
 import com.intellij.openapi.ui.Splitter;
-import com.intellij.openapi.ui.VerticalFlowLayout;
 import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.psi.*;
 import com.intellij.psi.util.PsiFormatUtil;
@@ -42,6 +41,7 @@ import com.intellij.util.IncorrectOperationException;
 import com.intellij.util.VisibilityUtil;
 import com.intellij.util.containers.MultiMap;
 import com.intellij.util.ui.DialogUtil;
+import com.intellij.util.ui.JBUI;
 import com.intellij.util.ui.UIUtil;
 import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
@@ -112,8 +112,8 @@ public class ExtractMethodDialog extends DialogWrapper implements AbstractExtrac
     myVariableData = inputVariables;
     myHelpId = helpId;
     mySignature = new MethodSignatureComponent("", project, JavaFileType.INSTANCE);
-    mySignature.setPreferredSize(new Dimension(500, 100));
-    mySignature.setMinimumSize(new Dimension(500, 100));
+    mySignature.setPreferredSize(JBUI.size(500, 100));
+    mySignature.setMinimumSize(JBUI.size(500, 100));
     setTitle(title);
 
     myNameField = new NameSuggestionsField(suggestMethodNames(), myProject);
@@ -216,7 +216,9 @@ public class ExtractMethodDialog extends DialogWrapper implements AbstractExtrac
 
     myVisibilityPanel = createVisibilityPanel();
     final JPanel visibilityAndReturnType = new JPanel(new BorderLayout(2, 0));
-    visibilityAndReturnType.add(myVisibilityPanel, BorderLayout.WEST);
+    if (!myTargetClass.isInterface()) {
+      visibilityAndReturnType.add(myVisibilityPanel, BorderLayout.WEST);
+    }
     final JPanel returnTypePanel = createReturnTypePanel();
     if (returnTypePanel != null) {
       visibilityAndReturnType.add(returnTypePanel, BorderLayout.EAST);
@@ -430,7 +432,7 @@ public class ExtractMethodDialog extends DialogWrapper implements AbstractExtrac
   }
 
   public String getVisibility() {
-    return myVisibilityPanel.getVisibility();
+    return myTargetClass.isInterface() ? PsiModifier.PUBLIC : myVisibilityPanel.getVisibility();
   }
 
 
@@ -455,7 +457,7 @@ public class ExtractMethodDialog extends DialogWrapper implements AbstractExtrac
     }
 
     myParamTable = createParameterTableComponent();
-    myParamTable.setMinimumSize(new Dimension(500, 100));
+    myParamTable.setMinimumSize(JBUI.size(500, 100));
     myCenterPanel.add(myParamTable, BorderLayout.CENTER);
     final JTable table = UIUtil.findComponentOfType(myParamTable, JTable.class);
     myCenterPanel.add(SeparatorFactory.createSeparator("&Parameters", table), BorderLayout.NORTH);
@@ -525,7 +527,7 @@ public class ExtractMethodDialog extends DialogWrapper implements AbstractExtrac
       buffer.append(StringUtil.getShortName(myNullness == Nullness.NULLABLE ? nullManager.getDefaultNullable() : nullManager.getDefaultNotNull()));
       buffer.append("\n");
     }
-    final String visibilityString = VisibilityUtil.getVisibilityString(myVisibilityPanel.getVisibility());
+    final String visibilityString = VisibilityUtil.getVisibilityString(getVisibility());
     buffer.append(visibilityString);
     if (buffer.length() > 0) {
       buffer.append(" ");

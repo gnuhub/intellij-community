@@ -180,7 +180,8 @@ public class GitUtil {
     throws VcsException {
     Map<VirtualFile, List<VirtualFile>> result = new HashMap<VirtualFile, List<VirtualFile>>();
     for (VirtualFile file : virtualFiles) {
-      final VirtualFile vcsRoot = gitRootOrNull(file);
+      // directory is reported only when it is a submodule => it should be treated in the context of super-root
+      final VirtualFile vcsRoot = gitRootOrNull(file.isDirectory() ? file.getParent() : file);
       if (vcsRoot == null) {
         if (ignoreNonGit) {
           continue;
@@ -329,7 +330,7 @@ public class GitUtil {
   }
 
   public static boolean isGitRoot(final File file) {
-    return file != null && file.exists() && file.isDirectory() && new File(file, DOT_GIT).exists();
+    return file != null && file.exists() && new File(file, DOT_GIT).exists();
   }
 
   /**

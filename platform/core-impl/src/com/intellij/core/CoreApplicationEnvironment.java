@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2014 JetBrains s.r.o.
+ * Copyright 2000-2015 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,6 +20,7 @@ import com.intellij.concurrency.AsyncFuture;
 import com.intellij.concurrency.AsyncUtil;
 import com.intellij.concurrency.Job;
 import com.intellij.concurrency.JobLauncher;
+import com.intellij.ide.plugins.PluginManagerCore;
 import com.intellij.lang.*;
 import com.intellij.lang.impl.PsiBuilderFactoryImpl;
 import com.intellij.mock.MockApplication;
@@ -42,9 +43,9 @@ import com.intellij.openapi.fileEditor.FileDocumentManager;
 import com.intellij.openapi.fileTypes.FileType;
 import com.intellij.openapi.fileTypes.FileTypeExtension;
 import com.intellij.openapi.fileTypes.FileTypeRegistry;
-import com.intellij.openapi.progress.ProcessCanceledException;
 import com.intellij.openapi.progress.ProgressIndicator;
 import com.intellij.openapi.progress.ProgressManager;
+import com.intellij.openapi.progress.impl.CoreProgressManager;
 import com.intellij.openapi.util.ClassExtension;
 import com.intellij.openapi.util.Disposer;
 import com.intellij.openapi.util.KeyedExtensionCollector;
@@ -72,6 +73,7 @@ import com.intellij.util.messages.MessageBusFactory;
 import org.jetbrains.annotations.NotNull;
 import org.picocontainer.MutablePicoContainer;
 
+import java.io.File;
 import java.lang.reflect.Modifier;
 import java.util.List;
 import java.util.concurrent.Future;
@@ -148,10 +150,11 @@ public class CoreApplicationEnvironment {
   protected JobLauncher createJobLauncher() {
     return new JobLauncher() {
       @Override
-      public <T> boolean invokeConcurrentlyUnderProgress(@NotNull List<? extends T> things,
+      public <T> boolean invokeConcurrentlyUnderProgress(@NotNull List<T> things,
                                                          ProgressIndicator progress,
+                                                         boolean runInReadAction,
                                                          boolean failFastOnAcquireReadAction,
-                                                         @NotNull Processor<T> thingProcessor) throws ProcessCanceledException {
+                                                         @NotNull Processor<? super T> thingProcessor) {
         for (T thing : things) {
           if (!thingProcessor.process(thing))
             return false;
@@ -159,27 +162,18 @@ public class CoreApplicationEnvironment {
         return true;
       }
 
-      @Override
-      public <T> boolean invokeConcurrentlyUnderProgress(@NotNull List<? extends T> things,
-                                                         ProgressIndicator progress,
-                                                         boolean runInReadAction,
-                                                         boolean failFastOnAcquireReadAction,
-                                                         @NotNull Processor<T> thingProcessor) {
-        return invokeConcurrentlyUnderProgress(things, progress, failFastOnAcquireReadAction, thingProcessor);
-      }
-
       @NotNull
       @Override
-      public <T> AsyncFuture<Boolean> invokeConcurrentlyUnderProgressAsync(@NotNull List<? extends T> things,
+      public <T> AsyncFuture<Boolean> invokeConcurrentlyUnderProgressAsync(@NotNull List<T> things,
                                                                            ProgressIndicator progress,
                                                                            boolean failFastOnAcquireReadAction,
-                                                                           @NotNull Processor<T> thingProcessor) {
+                                                                           @NotNull Processor<? super T> thingProcessor) {
         return AsyncUtil.wrapBoolean(invokeConcurrentlyUnderProgress(things, progress, failFastOnAcquireReadAction, thingProcessor));
       }
 
       @NotNull
       @Override
-      public Job<Void> submitToJobThread(int priority, @NotNull Runnable action, Consumer<Future> onDoneCallback) {
+      public Job<Void> submitToJobThread(@NotNull Runnable action, Consumer<Future> onDoneCallback) {
         action.run();
         if (onDoneCallback != null)
           onDoneCallback.consume(new Future() {
@@ -309,6 +303,10 @@ public class CoreApplicationEnvironment {
 
   public static <T> void registerApplicationExtensionPoint(@NotNull ExtensionPointName<T> extensionPointName, @NotNull Class<? extends T> aClass) {
     registerExtensionPoint(Extensions.getRootArea(), extensionPointName, aClass);
+  }
+
+  public static void registerExtensionPointAndExtensions(@NotNull File pluginRoot, @NotNull String fileName, @NotNull ExtensionsArea area) {
+    PluginManagerCore.registerExtensionPointAndExtensions(pluginRoot, fileName, area);
   }
 
   @NotNull

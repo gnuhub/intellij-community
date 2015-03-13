@@ -31,6 +31,7 @@ import com.intellij.openapi.options.SearchableConfigurable;
 import com.intellij.openapi.options.ShowSettingsUtil;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.ui.Messages;
+import com.intellij.openapi.ui.Splitter;
 import com.intellij.openapi.util.Comparing;
 import com.intellij.openapi.util.Condition;
 import com.intellij.openapi.util.Disposer;
@@ -39,6 +40,7 @@ import com.intellij.util.ArrayUtil;
 import com.intellij.util.Function;
 import com.intellij.util.PlatformIcons;
 import com.intellij.util.containers.ContainerUtil;
+import com.intellij.util.ui.JBUI;
 import gnu.trove.THashSet;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -260,14 +262,15 @@ public class AllFileTemplatesConfigurable implements SearchableConfigurable, Con
       }
     });
     myEditorComponent = myEditor.createComponent();
-    myEditorComponent.setBorder(BorderFactory.createEmptyBorder(0, 10, 10, 10));
+    myEditorComponent.setBorder(JBUI.Borders.empty(10, 0, 10, 10));
 
     myTabs = allTabs.toArray(new FileTemplateTab[allTabs.size()]);
     myTabbedPane = new TabbedPaneWrapper(myUIDisposable);
     myTabbedPane.setTabLayoutPolicy(JTabbedPane.SCROLL_TAB_LAYOUT);
     myLeftPanel = new JPanel(new CardLayout());
+    myLeftPanel.setBorder(JBUI.Borders.empty(10, 10, 10, 0));
     for (FileTemplateTab tab : myTabs) {
-      myLeftPanel.add(ScrollPaneFactory.createScrollPane(tab.getComponent(), SideBorder.TOP), tab.getTitle());
+      myLeftPanel.add(ScrollPaneFactory.createScrollPane(tab.getComponent()), tab.getTitle());
       JPanel fakePanel = new JPanel();
       fakePanel.setPreferredSize(new Dimension(0, 0));
       myTabbedPane.addTab(tab.getTitle(), fakePanel);
@@ -358,7 +361,8 @@ public class AllFileTemplatesConfigurable implements SearchableConfigurable, Con
 
     JPanel centerPanel = new JPanel(new BorderLayout());
     centerPanel.add(myTabbedPane.getComponent(), BorderLayout.NORTH);
-    OnePixelSplitter splitter = new OnePixelSplitter(false, 0.3f);
+    Splitter splitter = new Splitter(false, 0.3f);
+    splitter.setDividerWidth(JBUI.scale(10));
     splitter.setFirstComponent(myLeftPanel);
     splitter.setSecondComponent(myEditorComponent);
     centerPanel.add(splitter, BorderLayout.CENTER);
@@ -735,9 +739,7 @@ public class AllFileTemplatesConfigurable implements SearchableConfigurable, Con
         }).toArray(FileTemplate.EMPTY_ARRAY));
         templates.put(INCLUDES_TEMPLATES_CATEGORY, myIncludesList.getTemplates());
         templates.put(CODE_TEMPLATES_CATEGORY, myCodeTemplatesList.getTemplates());
-        if (myOtherTemplatesList != null) {
-          templates.put(J2EE_TEMPLATES_CATEGORY, myOtherTemplatesList.getTemplates());
-        }
+        templates.put(J2EE_TEMPLATES_CATEGORY, myOtherTemplatesList == null ? FileTemplate.EMPTY_ARRAY : myOtherTemplatesList.getTemplates());
         myChangesCache.put(myScheme, templates);
       }
     }

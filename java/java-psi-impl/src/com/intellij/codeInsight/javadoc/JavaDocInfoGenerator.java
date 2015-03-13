@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2014 JetBrains s.r.o.
+ * Copyright 2000-2015 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -29,6 +29,7 @@ import com.intellij.openapi.util.JDOMUtil;
 import com.intellij.openapi.util.Pair;
 import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.openapi.vfs.CharsetToolkit;
+import com.intellij.openapi.vfs.VfsUtilCore;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.psi.*;
 import com.intellij.psi.impl.JavaConstantExpressionEvaluator;
@@ -57,6 +58,7 @@ import org.jetbrains.annotations.Nullable;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.net.URL;
 import java.util.*;
 import java.util.regex.Pattern;
 
@@ -517,7 +519,7 @@ public class JavaDocInfoGenerator {
   }
 
   // not a javadoc in fact..
-  private static void generateVariableJavaDoc(@NonNls StringBuilder buffer, PsiVariable variable, boolean generatePrologueAndEpilogue) {
+  private void generateVariableJavaDoc(@NonNls StringBuilder buffer, PsiVariable variable, boolean generatePrologueAndEpilogue) {
     if (generatePrologueAndEpilogue)
       generatePrologue(buffer);
 
@@ -543,7 +545,7 @@ public class JavaDocInfoGenerator {
   }
 
   // not a javadoc in fact..
-  private static void generateFileJavaDoc(StringBuilder buffer, PsiFile file, boolean generatePrologueAndEpilogue) {
+  private void generateFileJavaDoc(StringBuilder buffer, PsiFile file, boolean generatePrologueAndEpilogue) {
     if (generatePrologueAndEpilogue)
       generatePrologue(buffer);
     final VirtualFile virtualFile = file.getVirtualFile();
@@ -585,9 +587,24 @@ public class JavaDocInfoGenerator {
 
   public void generateCommonSection(StringBuilder buffer, PsiDocComment docComment) {
     generateDescription(buffer, docComment);
+    generateApiSection(buffer, docComment);
     generateDeprecatedSection(buffer, docComment);
     generateSinceSection(buffer, docComment);
     generateSeeAlsoSection(buffer, docComment);
+  }
+
+  private void generateApiSection(StringBuilder buffer, PsiDocComment comment) {
+    final String[] tagNames = {"apiNote", "implSpec", "implNote"};
+    for (String tagName : tagNames) {
+      PsiDocTag tag = comment.findTagByName(tagName);
+      if (tag != null) {
+        buffer.append("<DD><DL>");
+        buffer.append("<DT><b>").append(tagName).append("</b>");
+        buffer.append("<DD>");
+        generateValue(buffer, tag.getDataElements(), ourEmptyElementsProvider);
+        buffer.append("</DD></DL></DD>");
+      }
+    }
   }
 
   private void generatePackageHtmlJavaDoc(final StringBuilder buffer, final PsiFile packageHtmlFile, boolean generatePrologueAndEpilogue) {
@@ -858,14 +875,13 @@ public class JavaDocInfoGenerator {
 
     if (method instanceof PsiMethod) {
       final PsiDocComment docComment = getDocComment((PsiMethod)method);
-      if (docComment != null) {
-        final Pair<PsiDocTag, InheritDocProvider<PsiDocTag>> tagInfoProvider =
-          findDocTag(docComment.getTags(), parameter.getName(), (PsiMethod)method);
+      final PsiDocTag[] localTags = docComment != null ? docComment.getTags() : PsiDocTag.EMPTY_ARRAY;
+      final Pair<PsiDocTag, InheritDocProvider<PsiDocTag>> tagInfoProvider =
+        findDocTag(localTags, parameter.getName(), (PsiMethod)method);
 
-        if (tagInfoProvider != null) {
-          PsiElement[] elements = tagInfoProvider.first.getDataElements();
-          if (elements.length != 0) generateOneParameter(elements, buffer, tagInfoProvider);
-        }
+      if (tagInfoProvider != null) {
+        PsiElement[] elements = tagInfoProvider.first.getDataElements();
+        if (elements.length != 0) generateOneParameter(elements, buffer, tagInfoProvider);
       }
     }
 
@@ -912,6 +928,7 @@ public class JavaDocInfoGenerator {
     generateThrowsSection(buffer, method, comment);
 
     if (comment != null) {
+      generateApiSection(buffer, comment);
       generateSinceSection(buffer, comment);
       generateSeeAlsoSection(buffer, comment);
     }
@@ -1047,10 +1064,13 @@ public class JavaDocInfoGenerator {
     }
   }
 
-  @SuppressWarnings({"HardCodedStringLiteral"})
-  private static void generatePrologue(StringBuilder buffer) {
-    buffer.append("<html><head>" +
-                  "    <style type=\"text/css\">" +
+  private void generatePrologue(StringBuilder buffer) {
+    URL baseUrl = getBaseUrl();
+    buffer.append("<html><head>");
+    if (baseUrl != null) {
+      buffer.append("<base href=\"").append(baseUrl).append("\">");
+    }
+    buffer.append("    <style type=\"text/css\">" +
                   "        #error {" +
                   "            background-color: #eeeeee;" +
                   "            margin-bottom: 10px;" +
@@ -1060,6 +1080,17 @@ public class JavaDocInfoGenerator {
                   "        }" +
                   "    </style>" +
                   "</head><body>");
+  }
+  
+  private URL getBaseUrl() {
+    if (myElement == null) return null;
+    PsiElement element = myElement.getNavigationElement();
+    if (element == null) return null;
+    PsiFile file = element.getContainingFile();
+    if (file == null) return null;
+    VirtualFile vFile = file.getVirtualFile();
+    if (vFile == null) return null;
+    return VfsUtilCore.convertToURL(vFile.getUrl());
   }
 
   @SuppressWarnings({"HardCodedStringLiteral"})

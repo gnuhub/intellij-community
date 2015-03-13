@@ -103,8 +103,7 @@ public class SoftWrapModelImpl implements SoftWrapModelEx, PrioritizedDocumentLi
   private int myActive;
   private boolean myUseSoftWraps;
   private int myTabWidth = -1;
-  @NotNull
-  private FontPreferences myFontPreferences;
+  private final FontPreferences myFontPreferences = new FontPreferences();
 
   /**
    * Soft wraps need to be kept up-to-date on all editor modification (changing text, adding/removing/expanding/collapsing fold
@@ -152,7 +151,7 @@ public class SoftWrapModelImpl implements SoftWrapModelEx, PrioritizedDocumentLi
       }
     });
     myUseSoftWraps = areSoftWrapsEnabledInEditor();
-    myFontPreferences = myEditor.getColorsScheme().getFontPreferences();
+    myEditor.getColorsScheme().getFontPreferences().copyTo(myFontPreferences);
     
     editor.addPropertyChangeListener(this);
 
@@ -160,7 +159,7 @@ public class SoftWrapModelImpl implements SoftWrapModelEx, PrioritizedDocumentLi
   }
 
   private boolean areSoftWrapsEnabledInEditor() {
-    return !(myEditor instanceof EditorWindow) && myEditor.getSettings().isUseSoftWraps() 
+    return !(myEditor instanceof EditorWindow) && myEditor.getSettings().isUseSoftWraps() && !((EditorImpl) myEditor).myUseNewRendering 
            && (!(myEditor.getDocument() instanceof DocumentImpl) || !((DocumentImpl)myEditor.getDocument()).acceptsSlashR());
   }
 
@@ -178,13 +177,15 @@ public class SoftWrapModelImpl implements SoftWrapModelEx, PrioritizedDocumentLi
     if (!myFontPreferences.equals(myEditor.getColorsScheme().getFontPreferences())
         && myEditorTextRepresentationHelper instanceof DefaultEditorTextRepresentationHelper) {
       fontsChanged = true;
-      myFontPreferences = myEditor.getColorsScheme().getFontPreferences();
+      myEditor.getColorsScheme().getFontPreferences().copyTo(myFontPreferences);
       ((DefaultEditorTextRepresentationHelper)myEditorTextRepresentationHelper).clearSymbolWidthCache();
+      myPainter.reinit();
     }
     
     if ((myUseSoftWraps ^ softWrapsUsedBefore) || (tabWidthBefore >= 0 && myTabWidth != tabWidthBefore) || fontsChanged) {
       myApplianceManager.reset();
       myDeferredFoldRegions.clear();
+      myStorage.removeAll();
       myEditor.getScrollingModel().scrollToCaret(ScrollType.CENTER);
     }
   }
@@ -286,9 +287,6 @@ public class SoftWrapModelImpl implements SoftWrapModelEx, PrioritizedDocumentLi
    * @return    total number of soft wrap-introduced new visual lines
    */
   public int getSoftWrapsIntroducedLinesNumber() {
-    if (!isSoftWrappingEnabled()) {
-      return 0;
-    }
     return myStorage.getSoftWraps().size(); // Assuming that soft wrap has single line feed all the time
   }
 

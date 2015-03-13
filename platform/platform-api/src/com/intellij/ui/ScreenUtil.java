@@ -69,12 +69,57 @@ public class ScreenUtil {
   }
 
   public static Shape getAllScreensShape() {
-    Rectangle[] rectangles = getAllScreenBounds();
+    GraphicsDevice[] devices = GraphicsEnvironment.getLocalGraphicsEnvironment().getScreenDevices();
+    if (devices.length == 0) {
+      return new Rectangle();
+    }
+    if (devices.length == 1) {
+      return getScreenRectangle(devices[0]);
+    }
     Area area = new Area();
-    for (Rectangle rectangle : rectangles) {
-      area.add(new Area(rectangle));
+    for (GraphicsDevice device : devices) {
+      area.add(new Area(getScreenRectangle(device)));
     }
     return area;
+  }
+
+  /**
+   * Returns the smallest rectangle that encloses a visible area of every screen.
+   *
+   * @return the smallest rectangle that encloses a visible area of every screen
+   */
+  public static Rectangle getAllScreensRectangle() {
+    GraphicsDevice[] devices = GraphicsEnvironment.getLocalGraphicsEnvironment().getScreenDevices();
+    if (devices.length == 0) {
+      return new Rectangle();
+    }
+    if (devices.length == 1) {
+      return getScreenRectangle(devices[0]);
+    }
+    int minX = 0;
+    int maxX = 0;
+    int minY = 0;
+    int maxY = 0;
+    for (GraphicsDevice device : devices) {
+      Rectangle rectangle = getScreenRectangle(device);
+      int x = rectangle.x;
+      if (minX > x) {
+        minX = x;
+      }
+      x += rectangle.width;
+      if (maxX < x) {
+        maxX = x;
+      }
+      int y = rectangle.y;
+      if (minY > y) {
+        minY = y;
+      }
+      y += rectangle.height;
+      if (maxY < y) {
+        maxY = y;
+      }
+    }
+    return new Rectangle(minX, minY, maxX - minX, maxY - minY);
   }
 
   public static Rectangle getScreenRectangle(@NotNull Point p) {
@@ -277,6 +322,49 @@ public class ScreenUtil {
     rectangle.height = move.height - insets.top - insets.bottom;
   }
 
+  /**
+   * Finds the best place for the specified rectangle on the screen.
+   *
+   * @param rectangle    the rectangle to move and resize
+   * @param top          preferred offset between {@code rectangle.y} and popup above
+   * @param bottom       preferred offset between {@code rectangle.y} and popup below
+   * @param rightAligned shows that the rectangle should be moved to the left
+   */
+  public static void fitToScreenVertical(Rectangle rectangle, int top, int bottom, boolean rightAligned) {
+    Rectangle screen = getScreenRectangle(rectangle.x, rectangle.y);
+    if (rectangle.width > screen.width) {
+      rectangle.width = screen.width;
+    }
+    if (rightAligned) {
+      rectangle.x -= rectangle.width;
+    }
+    if (rectangle.x < screen.x) {
+      rectangle.x = screen.x;
+    }
+    else {
+      int max = screen.x + screen.width;
+      if (rectangle.x > max) {
+        rectangle.x = max - rectangle.width;
+      }
+    }
+    int above = rectangle.y - screen.y - top;
+    int below = screen.height - above - top - bottom;
+    if (below > rectangle.height) {
+      rectangle.y += bottom;
+    }
+    else if (above > rectangle.height) {
+      rectangle.y -= rectangle.height + top;
+    }
+    else if (below > above) {
+      rectangle.y += bottom;
+      rectangle.height = below;
+    }
+    else {
+      rectangle.y -= rectangle.height + top;
+      rectangle.height = above;
+    }
+  }
+
   public static void fitToScreen(Rectangle r) {
     Rectangle screen = getScreenRectangle(r.x, r.y);
 
@@ -354,6 +442,10 @@ public class ScreenUtil {
       return false;
     }
     if (prevLocation == null || prevLocation.equals(location)) {
+      return true;
+    }
+    // consider any movement inside a rectangle as a valid movement towards
+    if (bounds.contains(location)) {
       return true;
     }
 

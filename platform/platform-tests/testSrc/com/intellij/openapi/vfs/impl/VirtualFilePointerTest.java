@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2014 JetBrains s.r.o.
+ * Copyright 2000-2015 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,7 +15,6 @@
  */
 package com.intellij.openapi.vfs.impl;
 
-import com.intellij.concurrency.Job;
 import com.intellij.concurrency.JobLauncher;
 import com.intellij.openapi.Disposable;
 import com.intellij.openapi.application.ApplicationManager;
@@ -31,6 +30,7 @@ import com.intellij.openapi.vfs.newvfs.events.VFileEvent;
 import com.intellij.openapi.vfs.pointers.VirtualFilePointer;
 import com.intellij.openapi.vfs.pointers.VirtualFilePointerListener;
 import com.intellij.openapi.vfs.pointers.VirtualFilePointerManager;
+import com.intellij.testFramework.LightVirtualFile;
 import com.intellij.testFramework.PlatformLangTestCase;
 import com.intellij.testFramework.PlatformTestUtil;
 import com.intellij.testFramework.Timings;
@@ -150,6 +150,37 @@ public class VirtualFilePointerTest extends PlatformLangTestCase {
     catch (IOException e) {
       fail();
     }
+  }
+
+  public void testUrlsHavingOnlyStartingSlashInCommon() throws Exception {
+    VirtualFilePointer p1 = myVirtualFilePointerManager.create("file:///a/p1", disposable, null);
+    VirtualFilePointer p2 = myVirtualFilePointerManager.create("file:///b/p2", disposable, null);
+    final LightVirtualFile root = new LightVirtualFile("/");
+    LightVirtualFile a = createLightFile(root, "a");
+    LightVirtualFile b = createLightFile(root, "b");
+    assertSameElements(myVirtualFilePointerManager.getPointersUnder(a, "p1"), p1);
+    assertSameElements(myVirtualFilePointerManager.getPointersUnder(b, "p2"), p2);
+  }
+
+  public void testUrlsHavingOnlyStartingSlashInCommonAndInvalidUrlBetweenThem() throws Exception {
+    VirtualFilePointer p1 = myVirtualFilePointerManager.create("file:///a/p1", disposable, null);
+    myVirtualFilePointerManager.create("file://invalid/path", disposable, null);
+    VirtualFilePointer p2 = myVirtualFilePointerManager.create("file:///b/p2", disposable, null);
+    final LightVirtualFile root = new LightVirtualFile("/");
+    LightVirtualFile a = createLightFile(root, "a");
+    LightVirtualFile b = createLightFile(root, "b");
+    assertSameElements(myVirtualFilePointerManager.getPointersUnder(a, "p1"), p1);
+    assertSameElements(myVirtualFilePointerManager.getPointersUnder(b, "p2"), p2);
+  }
+
+  @NotNull
+  private static LightVirtualFile createLightFile(final LightVirtualFile parent, final String name) {
+    return new LightVirtualFile(name) {
+      @Override
+      public VirtualFile getParent() {
+        return parent;
+      }
+    };
   }
 
   public void testPathNormalization() throws Exception {
@@ -669,7 +700,7 @@ public class VirtualFilePointerTest extends PlatformLangTestCase {
 
   private static void stressRead(@NotNull final VirtualFilePointer pointer) {
     for (int i = 0; i < 10; i++) {
-    JobLauncher.getInstance().submitToJobThread(Job.DEFAULT_PRIORITY, new Runnable() {
+    JobLauncher.getInstance().submitToJobThread(new Runnable() {
       @Override
       public void run() {
         ApplicationManager.getApplication().runReadAction(new Runnable() {

@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2014 JetBrains s.r.o.
+ * Copyright 2000-2015 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -29,12 +29,8 @@ import com.intellij.openapi.application.*;
 import com.intellij.openapi.application.ex.ApplicationManagerEx;
 import com.intellij.openapi.application.impl.ApplicationImpl;
 import com.intellij.openapi.components.*;
-import com.intellij.openapi.components.impl.stores.ComponentStoreImpl;
+import com.intellij.openapi.components.impl.stores.*;
 import com.intellij.openapi.components.impl.stores.ComponentStoreImpl.ReloadComponentStoreStatus;
-import com.intellij.openapi.components.impl.stores.FileBasedStorage;
-import com.intellij.openapi.components.impl.stores.StateStorageManager;
-import com.intellij.openapi.components.impl.stores.StorageUtil;
-import com.intellij.openapi.components.store.StateStorageBase;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.fileEditor.FileDocumentManager;
 import com.intellij.openapi.progress.*;
@@ -94,6 +90,7 @@ public class ProjectManagerImpl extends ProjectManagerEx implements PersistentSt
   private ProjectImpl myDefaultProject; // Only used asynchronously in save and dispose, which itself are synchronized.
   @SuppressWarnings({"FieldAccessedSynchronizedAndUnsynchronized"})
   private Element myDefaultProjectRootElement; // Only used asynchronously in save and dispose, which itself are synchronized.
+  private boolean myDefaultProjectConfigurationChanged;
 
   private final List<Project> myOpenProjects = new ArrayList<Project>();
   private Project[] myOpenProjectsArrayCache = {};
@@ -257,6 +254,18 @@ public class ProjectManagerImpl extends ProjectManagerEx implements PersistentSt
       }
     }
 
+    File projectFile = new File(filePath);
+    if (projectFile.isFile()) {
+      FileUtil.delete(projectFile);
+    }
+    else {
+      File[] files = new File(projectFile, Project.DIRECTORY_STORE_FOLDER).listFiles();
+      if (files != null) {
+        for (File file : files) {
+          FileUtil.delete(file);
+        }
+      }
+    }
     ProjectImpl project = createProject(projectName, filePath, false, optimiseTestLoadSpeed);
     try {
       initProject(project, useDefaultProjectSettings ? (ProjectImpl)getDefaultProject() : null);
@@ -387,7 +396,6 @@ public class ProjectManagerImpl extends ProjectManagerEx implements PersistentSt
           try {
             myDefaultProject = createProject(null, "", true, ApplicationManager.getApplication().isUnitTestMode());
             initProject(myDefaultProject, null);
-            myDefaultProjectRootElement = null;
           }
           catch (Throwable t) {
             PluginManager.processException(t);
@@ -503,10 +511,9 @@ public class ProjectManagerImpl extends ProjectManagerEx implements PersistentSt
       startupManager.runWhenProjectIsInitialized(new Runnable() {
         @Override
         public void run() {
-          final TrackingPathMacroSubstitutor macroSubstitutor =
-            ((ProjectEx)project).getStateStore().getStateStorageManager().getMacroSubstitutor();
-          if (macroSubstitutor != null) {
-            StorageUtil.notifyUnknownMacros(macroSubstitutor, project, null);
+          TrackingPathMacroSubstitutor substitutor = ((ProjectEx)project).getStateStore().getStateStorageManager().getMacroSubstitutor();
+          if (substitutor != null) {
+            StorageUtil.notifyUnknownMacros(substitutor, project, null);
           }
         }
       });
@@ -876,7 +883,7 @@ public class ProjectManagerImpl extends ProjectManagerEx implements PersistentSt
         listener.projectClosing(project);
       }
       catch (Exception e) {
-        LOG.error(e);
+        LOG.error("From listener "+listener+" ("+listener.getClass()+")", e);
       }
     }
   }
@@ -990,7 +997,7 @@ public class ProjectManagerImpl extends ProjectManagerEx implements PersistentSt
       myDefaultProject.save();
     }
 
-    if (myDefaultProjectRootElement == null) {
+    if (!myDefaultProjectConfigurationChanged) {
       // we are not ready to save
       return null;
     }
@@ -1007,10 +1014,12 @@ public class ProjectManagerImpl extends ProjectManagerEx implements PersistentSt
     if (myDefaultProjectRootElement != null) {
       myDefaultProjectRootElement.detach();
     }
+    myDefaultProjectConfigurationChanged = false;
   }
 
   public void setDefaultProjectRootElement(@NotNull Element defaultProjectRootElement) {
     myDefaultProjectRootElement = defaultProjectRootElement;
+    myDefaultProjectConfigurationChanged = true;
   }
 
   @Override

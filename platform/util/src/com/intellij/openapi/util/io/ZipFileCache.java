@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2014 JetBrains s.r.o.
+ * Copyright 2000-2015 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -27,6 +27,7 @@ import java.util.Collection;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ScheduledThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.zip.ZipFile;
 
@@ -72,8 +73,11 @@ public class ZipFileCache {
   private static final Map<ZipFile, CacheRecord> ourFileCache = ContainerUtil.newHashMap();
   private static final Map<ZipFile, Integer> ourQueue = ContainerUtil.newHashMap();
 
+  private static final ScheduledThreadPoolExecutor ourExecutor;
+
   static {
-    ConcurrencyUtil.newSingleScheduledThreadExecutor("ZipFileCache Dispose", Thread.MIN_PRIORITY).scheduleWithFixedDelay(new Runnable() {
+    ourExecutor = ConcurrencyUtil.newSingleScheduledThreadExecutor("ZipFileCache Dispose", Thread.MIN_PRIORITY);
+    ourExecutor.scheduleWithFixedDelay(new Runnable() {
       @Override
       public void run() {
         List<ZipFile> toClose = getFilesToClose(0, System.currentTimeMillis() - TIMEOUT);
@@ -235,5 +239,16 @@ public class ZipFileCache {
 
   private static void debug(@NotNull String format, Object... args) {
     LogUtil.debug(logger(), format, args);
+  }
+
+  /**
+   * ZipFileCache maintains a background thread. In server environments, this thread may run indefinitely and prevent the class loader from
+   * being gc-ed. Thus it's necessary to invoke this method to stop that thread and let the classes be garbage-collected.
+   */
+  @SuppressWarnings("unused")
+  public static void stopBackgroundThread() {
+    if (ourExecutor != null) {
+      ourExecutor.shutdown();
+    }
   }
 }

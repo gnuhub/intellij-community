@@ -40,12 +40,7 @@ import com.intellij.vcs.log.*;
 import com.intellij.vcs.log.impl.HashImpl;
 import com.intellij.vcs.log.impl.LogDataImpl;
 import com.intellij.vcs.log.util.StopWatch;
-import git4idea.GitBranch;
-import git4idea.GitCommit;
-import git4idea.GitFileRevision;
-import git4idea.GitRevisionNumber;
-import git4idea.GitUtil;
-import git4idea.GitVcs;
+import git4idea.*;
 import git4idea.branch.GitBranchUtil;
 import git4idea.commands.*;
 import git4idea.config.GitVersionSpecialty;
@@ -343,9 +338,10 @@ public class GitHistoryUtils {
       }
 
       try {
-        FilePath firstCommitRenamePath;
-        firstCommitRenamePath = getFirstCommitRenamePath(project, finalRoot, firstCommit.get(), currentPath.get());
-        currentPath.set(firstCommitRenamePath);
+        Pair<String, FilePath> firstCommitParentAndPath = getFirstCommitParentAndPathIfRename(project, finalRoot, firstCommit.get(),
+                                                                                              currentPath.get());
+        currentPath.set(firstCommitParentAndPath == null ? null : firstCommitParentAndPath.second);
+        firstCommitParent.set(firstCommitParentAndPath == null ? null : firstCommitParentAndPath.first);
         skipFurtherOutput.set(false);
       }
       catch (VcsException e) {
@@ -360,7 +356,7 @@ public class GitHistoryUtils {
   private static GitLineHandler getLogHandler(Project project, VirtualFile root, GitLogParser parser, FilePath path, String lastCommit, String... parameters) {
     final GitLineHandler h = new GitLineHandler(project, root, GitCommand.LOG);
     h.setStdoutSuppressed(true);
-    h.addParameters("--name-status", parser.getPretty(), "--encoding=UTF-8", lastCommit);
+    h.addParameters("--name-status", parser.getPretty(), "--encoding=UTF-8", "--full-history", "--simplify-merges", lastCommit);
     if (parameters != null && parameters.length > 0) {
       h.addParameters(parameters);
     }
@@ -375,7 +371,10 @@ public class GitHistoryUtils {
    * If it's not a rename, returns null.
    */
   @Nullable
-  private static FilePath getFirstCommitRenamePath(Project project, VirtualFile root, String commit, FilePath filePath) throws VcsException {
+  private static Pair<String, FilePath> getFirstCommitParentAndPathIfRename(Project project,
+                                                                            VirtualFile root,
+                                                                            String commit,
+                                                                            FilePath filePath) throws VcsException {
     // 'git show -M --name-status <commit hash>' returns the information about commit and detects renames.
     // NB: we can't specify the filepath, because then rename detection will work only with the '--follow' option, which we don't wanna use.
     final GitSimpleHandler h = new GitSimpleHandler(project, root, GitCommand.SHOW);
@@ -396,10 +395,13 @@ public class GitHistoryUtils {
 
     if (records.isEmpty()) return null;
     // we have information about all changed files of the commit. Extracting information about the file we need.
-    final List<Change> changes = records.get(0).parseChanges(project, root);
+    GitLogRecord record = records.get(0);
+    final List<Change> changes = record.parseChanges(project, root);
     for (Change change : changes) {
       if ((change.isMoved() || change.isRenamed()) && filePath.equals(change.getAfterRevision().getFile())) {
-        return change.getBeforeRevision().getFile();
+        final String[] parents = record.getParentsHashes();
+        String parent = parents.length > 0 ? parents[0] : null;
+        return Pair.create(parent, change.getBeforeRevision().getFile());
       }
     }
     return null;
@@ -740,7 +742,7 @@ public class GitHistoryUtils {
     if (factory == null) {
       return LogDataImpl.empty();
     }
-    final Set<VcsRef> refs = new OpenTHashSet<VcsRef>(GitLogProvider.REF_ONLY_NAME_STRATEGY);
+    final Set<VcsRef> refs = new OpenTHashSet<VcsRef>(GitLogProvider.DONT_CONSIDER_SHA);
     final List<VcsCommitMetadata> commits =
       loadDetails(project, root, withRefs, false, new NullableFunction<GitLogRecord, VcsCommitMetadata>() {
         @Nullable

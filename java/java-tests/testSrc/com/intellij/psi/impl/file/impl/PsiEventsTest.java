@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2014 JetBrains s.r.o.
+ * Copyright 2000-2015 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,8 +15,9 @@
  */
 package com.intellij.psi.impl.file.impl;
 
-
+import com.intellij.ide.IdeEventQueue;
 import com.intellij.openapi.application.ApplicationManager;
+import com.intellij.openapi.application.impl.LaterInvocator;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.editor.Document;
 import com.intellij.openapi.fileTypes.FileTypeManager;
@@ -29,9 +30,9 @@ import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.psi.*;
 import com.intellij.psi.impl.PsiTreeChangeEventImpl;
 import com.intellij.psi.search.GlobalSearchScope;
-import com.intellij.testFramework.PlatformTestUtil;
-import com.intellij.testFramework.PsiTestCase;
-import com.intellij.testFramework.PsiTestUtil;
+import com.intellij.testFramework.*;
+import com.intellij.util.MemoryDumpHelper;
+import com.intellij.util.Processor;
 import com.intellij.util.WaitFor;
 import com.intellij.util.io.ReadOnlyAttributeUtil;
 import org.jetbrains.annotations.NotNull;
@@ -39,6 +40,7 @@ import org.jetbrains.annotations.NotNull;
 import java.io.File;
 import java.io.IOException;
 
+@SkipSlowTestLocally
 public class PsiEventsTest extends PsiTestCase {
   private static final Logger LOG = Logger.getInstance("#com.intellij.psi.impl.file.impl.PsiEventsTest");
 
@@ -88,8 +90,6 @@ public class PsiEventsTest extends PsiTestCase {
         }
       }
     });
-
-    //((PsiManagerImpl)myPsiManager).getFileManager().disbleVFSEventsProcessing();
   }
 
   public void testCreateFile() throws Exception {
@@ -185,7 +185,27 @@ public class PsiEventsTest extends PsiTestCase {
 
     PlatformTestUtil.tryGcSoftlyReachableObjects();
 
-    assertNull(((FileManagerImpl)fileManager).getCachedDirectory(myPrjDir1));
+
+    if (((FileManagerImpl)fileManager).getCachedDirectory(myPrjDir1) != null) {
+      Processor<PsiDirectory> isReallyLeak = new Processor<PsiDirectory>() {
+        @Override
+        public boolean process(PsiDirectory directory) {
+          return directory.getVirtualFile().equals(myPrjDir1);
+        }
+      };
+      LeakHunter.checkLeak(ApplicationManager.getApplication(), PsiDirectory.class, isReallyLeak);
+      LeakHunter.checkLeak(IdeEventQueue.getInstance(), PsiDirectory.class, isReallyLeak);
+      LeakHunter.checkLeak(LaterInvocator.getLaterInvocatorQueue(), PsiDirectory.class, isReallyLeak);
+
+      String dumpPath = FileUtil.createTempFile(
+        new File(System.getProperty("teamcity.build.tempDir", System.getProperty("java.io.tmpdir"))), "testRenameFileWithoutDir", ".hprof",
+                 false, false).getPath();
+      MemoryDumpHelper.captureMemoryDump(dumpPath);
+      System.out.println(dumpPath);
+
+      assertNull(((FileManagerImpl)fileManager).getCachedDirectory(myPrjDir1));
+      fail("directory just died");
+    }
 
     EventsTestListener listener = new EventsTestListener();
     myPsiManager.addPsiTreeChangeListener(listener,getTestRootDisposable());

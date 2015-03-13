@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2014 JetBrains s.r.o.
+ * Copyright 2000-2015 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -44,8 +44,8 @@ import com.intellij.util.containers.ContainerUtil;
 import com.intellij.util.io.HttpRequests;
 import com.intellij.util.io.URLUtil;
 import com.intellij.util.ui.UIUtil;
+import com.intellij.xml.util.XmlStringUtil;
 import org.apache.http.client.utils.URIBuilder;
-import org.jdom.Document;
 import org.jdom.JDOMException;
 import org.jetbrains.annotations.Contract;
 import org.jetbrains.annotations.NonNls;
@@ -55,7 +55,6 @@ import org.jetbrains.annotations.Nullable;
 import javax.swing.event.HyperlinkEvent;
 import java.io.File;
 import java.io.IOException;
-import java.io.InterruptedIOException;
 import java.net.URISyntaxException;
 import java.net.URL;
 import java.util.*;
@@ -69,17 +68,8 @@ import java.util.*;
 public final class UpdateChecker {
   private static final Logger LOG = Logger.getInstance("#com.intellij.openapi.updateSettings.impl.UpdateChecker");
 
-  public enum DownloadPatchResult {
-    SUCCESS, FAILED, CANCELED
-  }
-
-  private static final NotNullLazyValue<NotificationGroup> GROUP = new NotNullLazyValue<NotificationGroup>() {
-    @NotNull
-    @Override
-    protected NotificationGroup compute() {
-      return new NotificationGroup(IdeBundle.message("update.available.group"), NotificationDisplayType.STICKY_BALLOON, true);
-    }
-  };
+  public static final NotificationGroup NOTIFICATIONS =
+    new NotificationGroup(IdeBundle.message("update.notifications.group"), NotificationDisplayType.STICKY_BALLOON, true);
 
   @NonNls private static final String INSTALLATION_UID = "installation.uid";
   @NonNls private static final String DISABLED_UPDATE = "disabled_update.txt";
@@ -166,8 +156,9 @@ public final class UpdateChecker {
     }
     else if (result.getState() == UpdateStrategy.State.CONNECTION_ERROR) {
       Exception e = result.getError();
-      if (e != null) LOG.warn(e);
-      showErrorMessage(manualCheck, IdeBundle.message(e instanceof InterruptedIOException ? "updates.timeout.error" : "updates.error.connection.failed"));
+      if (e != null) LOG.debug(e);
+      String cause = e != null ? e.getMessage() : "internal error";
+      showErrorMessage(manualCheck, IdeBundle.message("updates.error.connection.failed", cause));
       return;
     }
 
@@ -223,12 +214,11 @@ public final class UpdateChecker {
       String updateUrl = uriBuilder.toString();
       LogUtil.debug(LOG, "load update xml (UPDATE_URL='%s')", updateUrl);
 
-      info = HttpRequests.request(updateUrl).forceHttps(settings.SECURE_CONNECTION).connect(new HttpRequests.RequestProcessor<UpdatesInfo>() {
+      info = HttpRequests.request(updateUrl).forceHttps(settings.canUseSecureConnection()).connect(new HttpRequests.RequestProcessor<UpdatesInfo>() {
         @Override
         public UpdatesInfo process(@NotNull HttpRequests.Request request) throws IOException {
           try {
-            Document document = JDOMUtil.loadDocument(request.getInputStream());
-            return new UpdatesInfo(document.detachRootElement());
+            return new UpdatesInfo(JDOMUtil.load(request.getReader()));
           }
           catch (JDOMException e) {
             // corrupted content, don't bother telling user
@@ -289,15 +279,13 @@ public final class UpdateChecker {
     // check custom repositories and the main one for updates
     Map<PluginId, PluginDownloader> toUpdate = ContainerUtil.newTroveMap();
 
-    List<String> hosts = UpdateSettings.getInstance().getPluginHosts();
-    ContainerUtil.addIfNotNull(ApplicationInfoEx.getInstanceEx().getBuiltinPluginsUrl(), hosts);
-    hosts.add(null);  // default repository
+    List<String> hosts = RepositoryHelper.getPluginHosts();
     InstalledPluginsState state = InstalledPluginsState.getInstance();
 
     outer:
     for (String host : hosts) {
       try {
-        boolean forceHttps = host == null && updateSettings.SECURE_CONNECTION;
+        boolean forceHttps = host == null && updateSettings.canUseSecureConnection();
         List<IdeaPluginDescriptor> list = RepositoryHelper.loadPlugins(host, buildNumber, forceHttps, indicator);
         for (IdeaPluginDescriptor descriptor : list) {
           PluginId id = descriptor.getPluginId();
@@ -314,12 +302,12 @@ public final class UpdateChecker {
         }
       }
       catch (IOException e) {
+        LOG.debug(e);
         if (host != null) {
-          LOG.warn("failed to load plugin descriptions from " + host, e);
+          LOG.info("failed to load plugin descriptions from " + host + ": " + e.getMessage());
         }
         else {
-          LOG.warn(e);
-          showErrorMessage(manualCheck, e.getMessage());
+          showErrorMessage(manualCheck, IdeBundle.message("updates.error.connection.failed", e.getMessage()));
         }
       }
     }
@@ -371,6 +359,7 @@ public final class UpdateChecker {
   }
 
   private static void showErrorMessage(boolean showDialog, final String message) {
+    LOG.info(message);
     if (showDialog) {
       UIUtil.invokeLaterIfNeeded(new Runnable() {
         @Override
@@ -378,9 +367,6 @@ public final class UpdateChecker {
           Messages.showErrorDialog(message, IdeBundle.message("updates.error.connection.title"));
         }
       });
-    }
-    else {
-      LOG.warn(message);
     }
   }
 
@@ -419,7 +405,7 @@ public final class UpdateChecker {
       Runnable runnable = new Runnable() {
         @Override
         public void run() {
-          new UpdateInfoDialog(updatedChannel, enableLink, updateSettings.SECURE_CONNECTION, updatedPlugins, incompatiblePlugins).show();
+          new UpdateInfoDialog(updatedChannel, enableLink, updateSettings.canUseSecureConnection(), updatedPlugins, incompatiblePlugins).show();
         }
       };
 
@@ -458,7 +444,7 @@ public final class UpdateChecker {
     }
   }
 
-  private static void showNotification(@Nullable Project project, String message, boolean error, final @Nullable Runnable runnable) {
+  private static void showNotification(@Nullable Project project, String message, boolean error, @Nullable final Runnable runnable) {
     NotificationListener listener = null;
     if (runnable != null) {
       listener = new NotificationListener() {
@@ -470,9 +456,9 @@ public final class UpdateChecker {
       };
     }
 
-    String title = IdeBundle.message("updates.info.dialog.title");
+    String title = IdeBundle.message("update.notifications.title");
     NotificationType type = error ? NotificationType.ERROR : NotificationType.INFORMATION;
-    Notifications.Bus.notify(GROUP.getValue().createNotification(title, message, type, listener), project);
+    NOTIFICATIONS.createNotification(title, XmlStringUtil.wrapInHtml(message), type, listener).notify(project);
   }
 
   public static void addUpdateRequestParameter(@NotNull String name, @NotNull String value) {
@@ -545,28 +531,15 @@ public final class UpdateChecker {
     return "";
   }
 
-  public static DownloadPatchResult installPlatformUpdate(final PatchInfo patch, final BuildNumber toBuild, final boolean forceHttps) {
-    final Ref<DownloadPatchResult> result = Ref.create(DownloadPatchResult.CANCELED);
-
-    if (!ProgressManager.getInstance().runProcessWithProgressSynchronously(new Runnable() {
+  public static void installPlatformUpdate(final PatchInfo patch, final BuildNumber toBuild, final boolean forceHttps) throws IOException {
+    ProgressManager.getInstance().runProcessWithProgressSynchronously(new ThrowableComputable<Void, IOException>() {
       @Override
-      public void run() {
-        try {
-          ProgressIndicator indicator = ProgressManager.getInstance().getProgressIndicator();
-          downloadAndInstallPatch(patch, toBuild, forceHttps, indicator);
-          result.set(DownloadPatchResult.SUCCESS);
-        }
-        catch (IOException e) {
-          LOG.info(e);
-          result.set(DownloadPatchResult.FAILED);
-          Notifications.Bus.notify(new Notification("Updater", "Failed to download patch file", e.getMessage(), NotificationType.ERROR));
-        }
+      public Void compute() throws IOException {
+        ProgressIndicator indicator = ProgressManager.getInstance().getProgressIndicator();
+        downloadAndInstallPatch(patch, toBuild, forceHttps, indicator);
+        return null;
       }
-    }, IdeBundle.message("update.downloading.patch.progress.title"), true, null)) {
-      return DownloadPatchResult.CANCELED;
-    }
-
-    return result.get();
+    }, IdeBundle.message("update.downloading.patch.progress.title"), true, null);
   }
 
   private static void downloadAndInstallPatch(PatchInfo patch, BuildNumber toBuild, boolean forceHttps, final ProgressIndicator indicator) throws IOException {
@@ -576,7 +549,7 @@ public final class UpdateChecker {
 
     String bundledJdk = "";
     String jdkMacRedist = System.getProperty("idea.java.redist");
-    if (jdkMacRedist != null && jdkMacRedist.lastIndexOf("jdk-bundled") >= 0 ){
+    if (jdkMacRedist != null && jdkMacRedist.lastIndexOf("jdk-bundled") >= 0) {
       bundledJdk = "jdk-bundled".equals(jdkMacRedist) ? "-jdk-bundled" : "-custom-jdk-bundled";
     }
 
@@ -658,7 +631,7 @@ public final class UpdateChecker {
 
   private static boolean ourHasFailedPlugins = false;
   public static void checkForUpdate(IdeaLoggingEvent event) {
-    if (!ourHasFailedPlugins && UpdateSettings.getInstance().CHECK_NEEDED) {
+    if (!ourHasFailedPlugins && UpdateSettings.getInstance().isCheckNeeded()) {
       final Throwable throwable = event.getThrowable();
       final IdeaPluginDescriptor pluginDescriptor = PluginManager.getPlugin(IdeErrorsDialog.findPluginId(throwable));
       if (pluginDescriptor != null && !pluginDescriptor.isBundled()) {

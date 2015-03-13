@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2014 JetBrains s.r.o.
+ * Copyright 2000-2015 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -37,7 +37,6 @@ import java.io.File;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.CharBuffer;
-import java.util.Collections;
 import java.util.Set;
 
 public class FileBasedStorage extends XmlElementStorage {
@@ -95,6 +94,7 @@ public class FileBasedStorage extends XmlElementStorage {
     return isUseXmlProlog();
   }
 
+  @NotNull
   @Override
   protected XmlElementStorageSaveSession createSaveSession(@NotNull StorageData storageData) {
     return new FileSaveSession(storageData);
@@ -195,7 +195,7 @@ public class FileBasedStorage extends XmlElementStorage {
 
       CharBuffer charBuffer = CharsetToolkit.UTF8_CHARSET.decode(ByteBuffer.wrap(file.contentsToByteArray()));
       myLineSeparator = StorageUtil.detectLineSeparators(charBuffer, isUseLfLineSeparatorByDefault() ? null : LineSeparator.LF);
-      return JDOMUtil.loadDocument(charBuffer).getRootElement();
+      return JDOMUtil.loadDocument(charBuffer).detachRootElement();
     }
     catch (JDOMException e) {
       return processReadException(e);
@@ -208,34 +208,28 @@ public class FileBasedStorage extends XmlElementStorage {
   @Nullable
   private Element processReadException(@Nullable Exception e) {
     boolean contentTruncated = e == null;
-    myBlockSavingTheContent = isProjectOrModuleOrWorkspaceFile() && !contentTruncated;
+    myBlockSavingTheContent = !contentTruncated && (StorageUtil.isProjectOrModuleFile(myFileSpec) || myFileSpec.equals(StoragePathMacros.WORKSPACE_FILE));
     if (!ApplicationManager.getApplication().isUnitTestMode() && !ApplicationManager.getApplication().isHeadlessEnvironment()) {
       if (e != null) {
         LOG.info(e);
       }
-      Notifications.Bus.notify(
-        new Notification(Notifications.SYSTEM_MESSAGES_GROUP_ID, "Load Settings",
-                         "Cannot load settings from file '" + myFile.getPath() + "': " + (e == null ? "content truncated" : e.getLocalizedMessage()) + "\n" +
-                         getInvalidContentMessage(contentTruncated), NotificationType.WARNING));
+      new Notification(Notifications.SYSTEM_MESSAGES_GROUP_ID, "Load Settings",
+                       "Cannot load settings from file '" +
+                       myFile.getPath() + "': " +
+                       (e == null ? "content truncated" : e.getMessage()) + "\n" +
+                       (myBlockSavingTheContent ? "Please correct the file content" : "File content will be recreated"),
+                       NotificationType.WARNING).notify(null);
     }
-
     return null;
   }
 
-  private boolean isProjectOrModuleOrWorkspaceFile() {
-    return StorageUtil.isProjectOrModuleFile(myFileSpec) || myFileSpec.equals(StoragePathMacros.WORKSPACE_FILE);
-  }
-
-  private String getInvalidContentMessage(boolean contentTruncated) {
-    return isProjectOrModuleOrWorkspaceFile() && !contentTruncated ? "Please correct the file content" : "File content will be recreated";
-  }
-
   @Override
-  public void setDefaultState(final Element element) {
+  public void setDefaultState(@NotNull Element element) {
     element.setName(myRootElementName);
     super.setDefaultState(element);
   }
 
+  @SuppressWarnings("unused")
   public void updatedFromStreamProvider(@NotNull Set<String> changedComponentNames, boolean deleted) {
     if (myRoamingType == RoamingType.DISABLED) {
       // storage roaming was changed to DISABLED, but settings repository has old state
@@ -247,40 +241,21 @@ public class FileBasedStorage extends XmlElementStorage {
       if (newElement == null) {
         StorageUtil.deleteFile(myFile, this, myCachedVirtualFile);
         // if data was loaded, mark as changed all loaded components
-        if (myLoadedData != null) {
-          changedComponentNames.addAll(myLoadedData.getComponentNames());
-          myLoadedData = null;
+        if (myStorageData != null) {
+          changedComponentNames.addAll(myStorageData.getComponentNames());
+          myStorageData = null;
         }
       }
-      else if (myLoadedData != null) {
+      else if (myStorageData != null) {
         StorageData newStorageData = createStorageData();
         loadState(newStorageData, newElement);
-        changedComponentNames.addAll(myLoadedData.getChangedComponentNames(newStorageData, myPathMacroSubstitutor));
-        myLoadedData = newStorageData;
+        changedComponentNames.addAll(myStorageData.getChangedComponentNames(newStorageData, myPathMacroSubstitutor));
+        myStorageData = newStorageData;
       }
     }
     catch (Throwable e) {
       LOG.error(e);
     }
-  }
-
-  @Nullable
-  @Deprecated
-  public File updateFileExternallyFromStreamProviders() throws IOException {
-    Element element = getElement(loadData(true), true, Collections.<String, Element>emptyMap());
-    if (element == null) {
-      FileUtil.delete(myFile);
-      return null;
-    }
-
-    BufferExposingByteArrayOutputStream out = StorageUtil.newContentIfDiffers(element, getVirtualFile());
-    if (out == null) {
-      return null;
-    }
-
-    File file = new File(myFile.getAbsolutePath());
-    FileUtil.writeToFile(file, out.getInternalBuffer(), 0, out.size());
-    return file;
   }
 
   @Override

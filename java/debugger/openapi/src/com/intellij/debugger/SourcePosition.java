@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2014 JetBrains s.r.o.
+ * Copyright 2000-2015 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -168,6 +168,9 @@ public abstract class SourcePosition implements Navigatable{
       Document document = null;
       try {
         document = PsiDocumentManager.getInstance(file.getProject()).getDocument(file);
+        if (document == null) { // may be decompiled psi - try to get document for the original file
+          document = PsiDocumentManager.getInstance(file.getProject()).getDocument(file.getOriginalFile());
+        }
       }
       catch (Throwable e) {
         LOG.error(e);
@@ -280,6 +283,11 @@ public abstract class SourcePosition implements Navigatable{
       protected int calcLine() {
         return line;
       }
+
+      @Override
+      public String toString() {
+        return getFile().getName() + ":" + line;
+      }
     };
   }
 
@@ -290,11 +298,19 @@ public abstract class SourcePosition implements Navigatable{
       protected int calcOffset() {
         return offset;
       }
+
+      @Override
+      public String toString() {
+        return getFile().getName() + " offset " + offset;
+      }
     };
   }
      
   public static SourcePosition createFromElement(PsiElement element) {
-    final PsiElement navigationElement = element.getNavigationElement();
+    ApplicationManager.getApplication().assertReadAccessAllowed();
+    PsiElement navigationElement = element.getNavigationElement();
+    final SmartPsiElementPointer<PsiElement> pointer =
+      SmartPointerManager.getInstance(navigationElement.getProject()).createSmartPsiElementPointer(navigationElement);
     final PsiFile psiFile;
     if (JspPsiUtil.isInJspFile(navigationElement)) {
       psiFile = JspPsiUtil.getJspFile(navigationElement);
@@ -305,12 +321,19 @@ public abstract class SourcePosition implements Navigatable{
     return new SourcePositionCache(psiFile) {
       @Override
       protected PsiElement calcPsiElement() {
-        return navigationElement;
+        ApplicationManager.getApplication().assertReadAccessAllowed();
+        return pointer.getElement();
       }
 
       @Override
       protected int calcOffset() {
-        return navigationElement.getTextOffset();
+        return ApplicationManager.getApplication().runReadAction(new Computable<Integer>() {
+          @Override
+          public Integer compute() {
+            PsiElement elem = pointer.getElement();
+            return elem != null ? elem.getTextOffset() : -1;
+          }
+        });
       }
     };
   }

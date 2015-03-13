@@ -36,7 +36,9 @@ import java.awt.event.*;
 import java.awt.geom.Rectangle2D;
 import java.awt.image.BufferedImage;
 import java.io.IOException;
+import java.net.URI;
 import java.net.URISyntaxException;
+import java.net.URL;
 
 /**
  * Created by Denis Fokin
@@ -169,12 +171,11 @@ public class SheetController {
   }
 
   void requestFocus() {
-    final JComponent focusedComponent = (myDoNotAskOption == null) ? myFocusedButton : doNotAskCheckBox;
-    if (focusedComponent == null) return; // it might be we have only one button. it is a default one in that case
+    if (myFocusedButton == null) return; // it might be we have only one button. it is a default one in that case
     if (SystemInfo.isAppleJvm) {
-      focusedComponent.requestFocus();
+      myFocusedButton.requestFocus();
     } else {
-      focusedComponent.requestFocusInWindow();
+      myFocusedButton.requestFocusInWindow();
     }
   }
 
@@ -274,7 +275,12 @@ public class SheetController {
         if(he.getEventType() == HyperlinkEvent.EventType.ACTIVATED) {
           if(Desktop.isDesktopSupported()) {
             try {
-              Desktop.getDesktop().browse(he.getURL().toURI());
+              URL url = he.getURL();
+              if (url != null) {
+                Desktop.getDesktop().browse(url.toURI());
+              } else {
+                LOG.warn("URL is null; HyperlinkEvent: " + he.toString());
+              }
             }
             catch (IOException e) {
               LOG.error(e);
@@ -287,7 +293,7 @@ public class SheetController {
       }
     });
 
-    FontMetrics fontMetrics = mySheetMessage.getFontMetrics(regularFont);
+    FontMetrics fontMetrics = sheetPanel.getFontMetrics(regularFont);
 
     int widestWordWidth = 250;
 

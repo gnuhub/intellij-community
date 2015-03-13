@@ -32,6 +32,7 @@ import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.editor.*;
 import com.intellij.openapi.editor.actionSystem.EditorActionHandler;
 import com.intellij.openapi.extensions.Extensions;
+import com.intellij.openapi.project.DumbService;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.Ref;
 import com.intellij.openapi.util.TextRange;
@@ -177,7 +178,7 @@ public class EnterHandler extends BaseEnterHandler {
     documentManager.commitDocument(document);
   }
 
-  private static boolean isCommentComplete(PsiComment comment, CodeDocumentationAwareCommenter commenter, Editor editor) {
+  public static boolean isCommentComplete(PsiComment comment, CodeDocumentationAwareCommenter commenter, Editor editor) {
     for (CommentCompleteHandler handler : Extensions.getExtensions(CommentCompleteHandler.EP_NAME)) {
       if (handler.isApplicable(comment, commenter)) {
         return handler.isCommentComplete(comment, commenter, editor);
@@ -355,7 +356,7 @@ public class EnterHandler extends BaseEnterHandler {
                   commentContext.docStart = false;
                 }
                 else {
-                  commentContext.docAsterisk = true;
+                  commentContext.docAsterisk = CodeStyleSettingsManager.getSettings(getProject()).JD_LEADING_ASTERISKS_ARE_ENABLED;
                   commentContext.docStart = false;
                 }
               }
@@ -595,8 +596,16 @@ public class EnterHandler extends BaseEnterHandler {
 
         if (docProvider != null) {
           if (docProvider.findExistingDocComment(comment) != comment) return comment;
-          String docStub = docProvider.generateDocumentationContentStub(comment);
+          String docStub;
           
+          DumbService.getInstance(project).setAlternativeResolveEnabled(true);
+          try {
+            docStub = docProvider.generateDocumentationContentStub(comment);
+          }
+          finally {
+            DumbService.getInstance(project).setAlternativeResolveEnabled(false);
+          }
+
           if (docStub != null && docStub.length() != 0) {
             myOffset = CharArrayUtil.shiftForwardUntil(myDocument.getCharsSequence(), myOffset, LINE_SEPARATOR);
             myOffset = CharArrayUtil.shiftForward(myDocument.getCharsSequence(), myOffset, LINE_SEPARATOR);

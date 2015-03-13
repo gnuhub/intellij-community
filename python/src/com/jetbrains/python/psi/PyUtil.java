@@ -997,7 +997,28 @@ public class PyUtil {
     return target;
   }
 
+  /**
+   * @see #isPackage(PsiDirectory, boolean, PsiElement)
+   */
   public static boolean isPackage(@NotNull PsiDirectory directory, @Nullable PsiElement anchor) {
+    return isPackage(directory, true, anchor);
+  }
+
+  /**
+   * Checks that given PsiDirectory can be treated as Python package, i.e. it's either contains __init__.py or it's a namespace package
+   * (effectively any directory in Python 3.3 and above). Setuptools namespace packages can be checked as well, but it requires access to
+   * {@link PySetuptoolsNamespaceIndex} and may slow things down during update of project indexes.
+   * Also note that this method does not check that directory itself and its parents have valid importable names,
+   * use {@link PyNames#isIdentifier(String)} for this purpose.
+   *
+   * @param directory PSI directory to check
+   * @param checkSetupToolsPackages whether setuptools namespace packages should be considered as well
+   * @param anchor    optional anchor element to determine language level
+   * @return whether given directory is Python package
+   *
+   * @see PyNames#isIdentifier(String)
+   */
+  public static boolean isPackage(@NotNull PsiDirectory directory, boolean checkSetupToolsPackages, @Nullable PsiElement anchor) {
     if (directory.findFile(PyNames.INIT_DOT_PY) != null) {
       return true;
     }
@@ -1007,7 +1028,7 @@ public class PyUtil {
     if (level.isAtLeast(LanguageLevel.PYTHON33)) {
       return true;
     }
-    return isSetuptoolsNamespacePackage(directory);
+    return checkSetupToolsPackages && isSetuptoolsNamespacePackage(directory);
   }
 
   public static boolean isPackage(@NotNull PsiFile file) {
@@ -1060,7 +1081,7 @@ public class PyUtil {
     PsiElement parent = PsiTreeUtil.getStubOrPsiParent(elt);
     boolean jump_over = false;
     while (parent != null) {
-      if (parent instanceof PyClass || parent instanceof Callable) {
+      if (parent instanceof PyClass || parent instanceof PyCallable) {
         if (jump_over) {
           jump_over = false;
         }
@@ -1344,7 +1365,9 @@ public class PyUtil {
         final VirtualFile baseDir = project.getBaseDir();
         final FileTemplateManager fileTemplateManager = FileTemplateManager.getInstance(project);
         final FileTemplate template = fileTemplateManager.getInternalTemplate("Python Script");
-        final String content = (template != null) ? template.getText(fileTemplateManager.getDefaultProperties(project)) : null;
+        final Properties properties = fileTemplateManager.getDefaultProperties();
+        properties.setProperty("NAME", FileUtil.getNameWithoutExtension(file.getName()));
+        final String content = (template != null) ? template.getText(properties) : null;
         psi = PyExtractSuperclassHelper.placeFile(project,
                                                   StringUtil.notNullize(
                                                     file.getParent(),
@@ -1364,7 +1387,7 @@ public class PyUtil {
     }
     if (!(psi instanceof PyFile)) {
       throw new IncorrectOperationException(PyBundle.message(
-        "refactoring.move.class.or.function.error.cannot.place.elements.into.nonpython.file"));
+        "refactoring.move.module.members.error.cannot.place.elements.into.nonpython.file"));
     }
     return (PyFile)psi;
   }
@@ -1576,7 +1599,7 @@ public class PyUtil {
   }
 
   @NotNull
-  public static List<PyParameter> getParameters(@NotNull Callable callable, @NotNull TypeEvalContext context) {
+  public static List<PyParameter> getParameters(@NotNull PyCallable callable, @NotNull TypeEvalContext context) {
     PyType type = context.getType(callable);
     if (type instanceof PyUnionType) {
       type = ((PyUnionType)type).excludeNull(context);
@@ -1603,7 +1626,7 @@ public class PyUtil {
     return Arrays.asList(callable.getParameterList().getParameters());
   }
 
-  public static boolean isSignatureCompatibleTo(@NotNull Callable callable, @NotNull Callable otherCallable,
+  public static boolean isSignatureCompatibleTo(@NotNull PyCallable callable, @NotNull PyCallable otherCallable,
                                                 @NotNull TypeEvalContext context) {
     final List<PyParameter> parameters = getParameters(callable, context);
     final List<PyParameter> otherParameters = getParameters(otherCallable, context);
@@ -1632,11 +1655,11 @@ public class PyUtil {
     return n;
   }
 
-  private static int requiredParametersCount(@NotNull Callable callable, @NotNull List<PyParameter> parameters) {
+  private static int requiredParametersCount(@NotNull PyCallable callable, @NotNull List<PyParameter> parameters) {
     return parameters.size() - optionalParametersCount(parameters) - specialParametersCount(callable, parameters);
   }
 
-  private static int specialParametersCount(@NotNull Callable callable, @NotNull List<PyParameter> parameters) {
+  private static int specialParametersCount(@NotNull PyCallable callable, @NotNull List<PyParameter> parameters) {
     int n = 0;
     if (hasPositionalContainer(parameters)) {
       n++;

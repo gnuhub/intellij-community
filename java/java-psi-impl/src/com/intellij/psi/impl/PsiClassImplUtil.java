@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2014 JetBrains s.r.o.
+ * Copyright 2000-2015 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,10 +20,10 @@ import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.progress.ProgressIndicatorProvider;
 import com.intellij.openapi.roots.FileIndexFacade;
 import com.intellij.openapi.util.*;
+import com.intellij.openapi.util.registry.Registry;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.pom.java.LanguageLevel;
 import com.intellij.psi.*;
-import com.intellij.psi.filters.OrFilter;
 import com.intellij.psi.impl.source.ClassInnerStuffCache;
 import com.intellij.psi.impl.source.PsiImmediateClassType;
 import com.intellij.psi.impl.source.resolve.graphInference.InferenceSession;
@@ -34,10 +34,7 @@ import com.intellij.psi.scope.NameHint;
 import com.intellij.psi.scope.PsiScopeProcessor;
 import com.intellij.psi.scope.processor.FilterScopeProcessor;
 import com.intellij.psi.scope.processor.MethodResolverProcessor;
-import com.intellij.psi.search.GlobalSearchScope;
-import com.intellij.psi.search.LocalSearchScope;
-import com.intellij.psi.search.PackageScope;
-import com.intellij.psi.search.SearchScope;
+import com.intellij.psi.search.*;
 import com.intellij.psi.util.*;
 import com.intellij.ui.IconDeferrer;
 import com.intellij.ui.RowIcon;
@@ -45,6 +42,7 @@ import com.intellij.util.Function;
 import com.intellij.util.IncorrectOperationException;
 import com.intellij.util.NullableFunction;
 import com.intellij.util.SmartList;
+import com.intellij.util.containers.ConcurrentFactoryMap;
 import com.intellij.util.containers.HashSet;
 import gnu.trove.THashMap;
 import gnu.trove.THashSet;
@@ -61,7 +59,7 @@ import java.util.*;
  */
 public class PsiClassImplUtil {
   private static final Logger LOG = Logger.getInstance("#com.intellij.psi.impl.PsiClassImplUtil");
-  private static final Key<ParameterizedCachedValue<MembersMap, PsiClass>> MAP_IN_CLASS_KEY = Key.create("MAP_KEY");
+  private static final Key<ParameterizedCachedValue<Map<GlobalSearchScope, MembersMap>, PsiClass>> MAP_IN_CLASS_KEY = Key.create("MAP_KEY");
   private static final String VALUES_METHOD = "values";
   private static final String VALUE_OF_METHOD = "valueOf";
 
@@ -214,62 +212,14 @@ public class PsiClassImplUtil {
 
   public enum MemberType {CLASS, FIELD, METHOD}
 
-  @NotNull
-  private static MembersMap buildAllMaps(@NotNull PsiClass psiClass) {
-    final List<Pair<PsiMember, PsiSubstitutor>> classes = new ArrayList<Pair<PsiMember, PsiSubstitutor>>();
-    final List<Pair<PsiMember, PsiSubstitutor>> fields = new ArrayList<Pair<PsiMember, PsiSubstitutor>>();
-    final List<Pair<PsiMember, PsiSubstitutor>> methods = new ArrayList<Pair<PsiMember, PsiSubstitutor>>();
-
-    FilterScopeProcessor<MethodCandidateInfo> processor = new FilterScopeProcessor<MethodCandidateInfo>(
-      new OrFilter(ElementClassFilter.METHOD, ElementClassFilter.FIELD, ElementClassFilter.CLASS)) {
-      @Override
-      protected void add(@NotNull PsiElement element, @NotNull PsiSubstitutor substitutor) {
-        if (element instanceof PsiMethod) {
-          methods.add(Pair.create((PsiMember)element, substitutor));
-        }
-        else if (element instanceof PsiField) {
-          fields.add(Pair.create((PsiMember)element, substitutor));
-        }
-        else if (element instanceof PsiClass) {
-          classes.add(Pair.create((PsiMember)element, substitutor));
-        }
-      }
-    };
-    processDeclarationsInClassNotCached(psiClass, processor, ResolveState.initial(), null, null, psiClass, false,
-                                        PsiUtil.getLanguageLevel(psiClass));
-
-    MembersMap result = new MembersMap(MemberType.class);
-    result.put(MemberType.CLASS, generateMapByList(classes));
-    result.put(MemberType.METHOD, generateMapByList(methods));
-    result.put(MemberType.FIELD, generateMapByList(fields));
-    return result;
-  }
-
-  @NotNull
-  private static Map<String, List<Pair<PsiMember, PsiSubstitutor>>> generateMapByList(@NotNull final List<Pair<PsiMember, PsiSubstitutor>> list) {
-    Map<String, List<Pair<PsiMember, PsiSubstitutor>>> map = new THashMap<String, List<Pair<PsiMember, PsiSubstitutor>>>();
-    map.put(ALL, list);
-    for (final Pair<PsiMember, PsiSubstitutor> info : list) {
-      PsiMember element = info.getFirst();
-      String currentName = element.getName();
-      List<Pair<PsiMember, PsiSubstitutor>> listByName = map.get(currentName);
-      if (listByName == null) {
-        listByName = new ArrayList<Pair<PsiMember, PsiSubstitutor>>(1);
-        map.put(currentName, listByName);
-      }
-      listByName.add(info);
-    }
-    return map;
-  }
-
   private static Map<String, List<Pair<PsiMember, PsiSubstitutor>>> getMap(@NotNull PsiClass aClass, @NotNull MemberType type) {
-    ParameterizedCachedValue<MembersMap, PsiClass> value = getValues(aClass);
-    return value.getValue(aClass).get(type);
+    ParameterizedCachedValue<Map<GlobalSearchScope, MembersMap>, PsiClass> value = getValues(aClass);
+    return value.getValue(aClass).get(aClass.getResolveScope()).get(type);
   }
 
   @NotNull
-  private static ParameterizedCachedValue<MembersMap, PsiClass> getValues(@NotNull PsiClass aClass) {
-    ParameterizedCachedValue<MembersMap, PsiClass> value = aClass.getUserData(MAP_IN_CLASS_KEY);
+  private static ParameterizedCachedValue<Map<GlobalSearchScope, MembersMap>, PsiClass> getValues(@NotNull PsiClass aClass) {
+    ParameterizedCachedValue<Map<GlobalSearchScope, MembersMap>, PsiClass> value = aClass.getUserData(MAP_IN_CLASS_KEY);
     if (value == null) {
       value = CachedValuesManager.getManager(aClass.getProject()).createParameterizedCachedValue(ByNameCachedValueProvider.INSTANCE, false);
       //Do not cache for nonphysical elements
@@ -407,19 +357,64 @@ public class PsiClassImplUtil {
     return factory.createMethodFromText(text, null).getSignature(PsiSubstitutor.EMPTY);
   }
 
-  private static class MembersMap extends EnumMap<MemberType, Map<String, List<Pair<PsiMember, PsiSubstitutor>>>> {
-    public MembersMap(@NotNull Class<MemberType> keyType) {
-      super(keyType);
+  private static class MembersMap extends ConcurrentFactoryMap<MemberType, Map<String, List<Pair<PsiMember, PsiSubstitutor>>>> {
+    private final PsiClass myPsiClass;
+    private final GlobalSearchScope myResolveScope;
+
+    public MembersMap(PsiClass psiClass, GlobalSearchScope scope) {
+      myPsiClass = psiClass;
+      myResolveScope = scope;
+    }
+
+    @Nullable
+    @Override
+    protected Map<String, List<Pair<PsiMember, PsiSubstitutor>>> create(final MemberType key) {
+      final Map<String, List<Pair<PsiMember, PsiSubstitutor>>> map = new THashMap<String, List<Pair<PsiMember, PsiSubstitutor>>>();
+      
+      final List<Pair<PsiMember, PsiSubstitutor>> allMembers = new ArrayList<Pair<PsiMember, PsiSubstitutor>>();
+      map.put(ALL, allMembers);
+
+      ElementClassFilter filter = key == MemberType.CLASS ? ElementClassFilter.CLASS :
+                                  key == MemberType.METHOD ? ElementClassFilter.METHOD :
+                                  ElementClassFilter.FIELD;
+      FilterScopeProcessor<MethodCandidateInfo> processor = new FilterScopeProcessor<MethodCandidateInfo>(filter) {
+        @Override
+        protected void add(@NotNull PsiElement element, @NotNull PsiSubstitutor substitutor) {
+          if (key == MemberType.CLASS && element instanceof PsiClass ||
+              key == MemberType.METHOD && element instanceof PsiMethod ||
+              key == MemberType.FIELD && element instanceof PsiField) {
+            Pair<PsiMember, PsiSubstitutor> info = Pair.create((PsiMember)element, substitutor);
+            allMembers.add(info);
+            String currentName = ((PsiMember)element).getName();
+            List<Pair<PsiMember, PsiSubstitutor>> listByName = map.get(currentName);
+            if (listByName == null) {
+              listByName = new ArrayList<Pair<PsiMember, PsiSubstitutor>>(1);
+              map.put(currentName, listByName);
+            }
+            listByName.add(info);
+          }
+        }
+      };
+      
+      processDeclarationsInClassNotCached(myPsiClass, processor, ResolveState.initial(), null, null, myPsiClass, false,
+                                          PsiUtil.getLanguageLevel(myPsiClass), myResolveScope);
+      return map;
     }
   }
 
-  private static class ByNameCachedValueProvider implements ParameterizedCachedValueProvider<MembersMap, PsiClass> {
+  private static class ByNameCachedValueProvider implements ParameterizedCachedValueProvider<Map<GlobalSearchScope, MembersMap>, PsiClass> {
     private static final ByNameCachedValueProvider INSTANCE = new ByNameCachedValueProvider();
 
     @Override
-    public CachedValueProvider.Result<MembersMap> compute(@NotNull PsiClass myClass) {
-      MembersMap map = buildAllMaps(myClass);
-      return new CachedValueProvider.Result<MembersMap>(map, PsiModificationTracker.OUT_OF_CODE_BLOCK_MODIFICATION_COUNT);
+    public CachedValueProvider.Result<Map<GlobalSearchScope, MembersMap>> compute(@NotNull final PsiClass myClass) {
+      final Map<GlobalSearchScope, MembersMap> map = new ConcurrentFactoryMap<GlobalSearchScope, MembersMap>() {
+        @Nullable
+        @Override
+        protected MembersMap create(GlobalSearchScope resolveScope) {
+          return new MembersMap(myClass, resolveScope);
+        }
+      };
+      return CachedValueProvider.Result.create(map, PsiModificationTracker.OUT_OF_CODE_BLOCK_MODIFICATION_COUNT);
     }
   }
 
@@ -450,6 +445,18 @@ public class PsiClassImplUtil {
                                                    @NotNull PsiElement place,
                                                    @NotNull LanguageLevel languageLevel,
                                                    boolean isRaw) {
+    return processDeclarationsInClass(aClass, processor, state, visited, last, place, languageLevel, isRaw, place.getResolveScope());
+  }
+
+  private static boolean processDeclarationsInClass(@NotNull PsiClass aClass,
+                                                    @NotNull final PsiScopeProcessor processor,
+                                                    @NotNull ResolveState state,
+                                                    @Nullable Set<PsiClass> visited,
+                                                    PsiElement last,
+                                                    @NotNull PsiElement place,
+                                                    @NotNull LanguageLevel languageLevel,
+                                                    boolean isRaw,
+                                                    @NotNull GlobalSearchScope resolveScope) {
     if (last instanceof PsiTypeParameterList || last instanceof PsiModifierList) {
       return true; //TypeParameterList and ModifierList do not see our declarations
     }
@@ -458,16 +465,17 @@ public class PsiClassImplUtil {
     PsiSubstitutor substitutor = state.get(PsiSubstitutor.KEY);
     isRaw = isRaw || PsiUtil.isRawSubstitutor(aClass, substitutor);
 
-    ParameterizedCachedValue<MembersMap, PsiClass> cache = getValues(aClass); //aClass.getUserData(MAP_IN_CLASS_KEY);
+    ParameterizedCachedValue<Map<GlobalSearchScope, MembersMap>, PsiClass> cache = getValues(aClass); //aClass.getUserData(MAP_IN_CLASS_KEY);
     boolean upToDate = cache.hasUpToDateValue();
     if (/*true || */upToDate) {
       final NameHint nameHint = processor.getHint(NameHint.KEY);
       if (nameHint != null) {
         String name = nameHint.getName(state);
-        return processCachedMembersByName(aClass, processor, state, visited, last, place, isRaw, substitutor, cache.getValue(aClass), name,languageLevel);
+        return processCachedMembersByName(aClass, processor, state, visited, last, place, isRaw, substitutor,
+                                          cache.getValue(aClass).get(resolveScope), name,languageLevel);
       }
     }
-    return processDeclarationsInClassNotCached(aClass, processor, state, visited, last, place, isRaw, languageLevel);
+    return processDeclarationsInClassNotCached(aClass, processor, state, visited, last, place, isRaw, languageLevel, resolveScope);
   }
 
   private static boolean processCachedMembersByName(@NotNull PsiClass aClass,
@@ -640,7 +648,8 @@ public class PsiClassImplUtil {
                                                              PsiElement last,
                                                              @NotNull PsiElement place,
                                                              boolean isRaw,
-                                                             @NotNull LanguageLevel languageLevel) {
+                                                             @NotNull LanguageLevel languageLevel,
+                                                             @NotNull GlobalSearchScope resolveScope) {
     if (visited == null) visited = new THashSet<PsiClass>();
     if (!visited.add(aClass)) return true;
     processor.handleEvent(PsiScopeProcessor.Event.SET_DECLARATION_HOLDER, aClass);
@@ -698,7 +707,58 @@ public class PsiClassImplUtil {
     }
 
     return last instanceof PsiReferenceList || processSuperTypes(aClass, processor, visited, last, place, state, isRaw, factory,
-                                                                 languageLevel);
+                                                                 languageLevel, resolveScope);
+  }
+
+  @Nullable
+  public static PsiClassType correctType(PsiClassType originalType, final GlobalSearchScope resolveScope) {
+    if (!Registry.is("java.correct.class.type.by.place.resolve.scope")) {
+      return originalType;
+    }
+
+    final PsiClassType.ClassResolveResult originalResolveResult = originalType.resolveGenerics();
+    PsiClass superClass = originalResolveResult.getElement();
+    if (superClass == null) {
+      return originalType;
+    }
+
+    String qualifiedName = superClass.getQualifiedName();
+    if (qualifiedName != null && !PsiSearchScopeUtil.isInScope(resolveScope, superClass)) {
+      final PsiFile file = superClass.getContainingFile();
+      if (file == null || !file.getViewProvider().isPhysical()) {
+        return originalType;
+      }
+      PsiClass originalSuperClass = superClass;
+      PsiSubstitutor originalSubstitutor = originalResolveResult.getSubstitutor();
+      superClass = JavaPsiFacade.getInstance(superClass.getProject()).findClass(qualifiedName, resolveScope);
+      if (superClass == null) {
+        return null;
+      }
+
+      PsiTypeParameter[] typeParameters = superClass.getTypeParameters();
+      PsiTypeParameter[] originalTypeParameters = originalSuperClass.getTypeParameters();
+      if (typeParameters.length != originalTypeParameters.length) return null;
+
+      PsiSubstitutor substitutor = PsiSubstitutor.EMPTY;
+      for (int i = 0; i < originalTypeParameters.length; i++) {
+        PsiType originalSubstitute = originalSubstitutor.substitute(originalTypeParameters[i]);
+        if (originalSubstitute != null) {
+          PsiType substitute = originalSubstitute.accept(new PsiTypeVisitor<PsiType>() {
+            @Nullable
+            @Override
+            public PsiType visitClassType(PsiClassType classType) {
+              return correctType(classType, resolveScope);
+            }
+          });
+          if (substitute == null) return null;
+
+          substitutor = substitutor.put(typeParameters[i], substitute);
+        }
+      }
+      return JavaPsiFacade.getElementFactory(superClass.getProject()).createType(superClass, substitutor);
+    }
+
+    return originalType;
   }
 
   private static boolean processSuperTypes(@NotNull PsiClass aClass,
@@ -709,15 +769,19 @@ public class PsiClassImplUtil {
                                            @NotNull ResolveState state,
                                            boolean isRaw,
                                            @NotNull PsiElementFactory factory,
-                                           @NotNull LanguageLevel languageLevel) {
+                                           @NotNull LanguageLevel languageLevel, GlobalSearchScope resolveScope) {
     boolean resolved = false;
-    for (final PsiClassType superType : aClass.getSuperTypes()) {
+    for (PsiClassType superType : aClass.getSuperTypes()) {
+      superType = correctType(superType, resolveScope);
+      if (superType == null) continue;
+      
       final PsiClassType.ClassResolveResult superTypeResolveResult = superType.resolveGenerics();
       PsiClass superClass = superTypeResolveResult.getElement();
       if (superClass == null) continue;
       PsiSubstitutor finalSubstitutor = obtainFinalSubstitutor(superClass, superTypeResolveResult.getSubstitutor(), aClass,
                                                                state.get(PsiSubstitutor.KEY), factory, languageLevel);
-      if (!processDeclarationsInClass(superClass, processor, state.put(PsiSubstitutor.KEY, finalSubstitutor), visited, last, place, languageLevel, isRaw)) {
+      if (!processDeclarationsInClass(superClass, processor, state.put(PsiSubstitutor.KEY, finalSubstitutor), visited, last, place,
+                                      languageLevel, isRaw, resolveScope)) {
         resolved = true;
       }
     }
@@ -912,8 +976,11 @@ public class PsiClassImplUtil {
                                                       @NotNull PsiManager manager,
                                                       @NotNull GlobalSearchScope resolveScope,
                                                       boolean includeObject) {
-    PsiClass objectClass = JavaPsiFacade.getInstance(manager.getProject()).findClass(CommonClassNames.JAVA_LANG_OBJECT, resolveScope);
-    if (objectClass == null) includeObject = false;
+    PsiClass objectClass = null;
+    if (includeObject) {
+      objectClass = JavaPsiFacade.getInstance(manager.getProject()).findClass(CommonClassNames.JAVA_LANG_OBJECT, resolveScope);
+      if (objectClass == null) includeObject = false;
+    }
     if (listOfTypes.length == 0) {
       if (includeObject) return new PsiClass[]{objectClass};
       return PsiClass.EMPTY_ARRAY;

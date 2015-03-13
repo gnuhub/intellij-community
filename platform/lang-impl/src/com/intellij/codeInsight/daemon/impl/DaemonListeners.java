@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2014 JetBrains s.r.o.
+ * Copyright 2000-2015 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -47,7 +47,6 @@ import com.intellij.openapi.editor.impl.EditorImpl;
 import com.intellij.openapi.fileEditor.FileDocumentManager;
 import com.intellij.openapi.fileEditor.FileEditor;
 import com.intellij.openapi.fileEditor.FileEditorManager;
-import com.intellij.openapi.fileEditor.TextEditor;
 import com.intellij.openapi.module.ModuleUtilCore;
 import com.intellij.openapi.project.DumbService;
 import com.intellij.openapi.project.Project;
@@ -85,7 +84,6 @@ import org.jetbrains.annotations.Nullable;
 
 import java.beans.PropertyChangeEvent;
 import java.beans.PropertyChangeListener;
-import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 
@@ -131,7 +129,9 @@ public class DaemonListeners implements Disposable {
                          @NotNull TodoConfiguration todoConfiguration,
                          @NotNull ActionManagerEx actionManagerEx,
                          @NotNull VirtualFileManager virtualFileManager,
+                         @SuppressWarnings("UnusedParameters") // for dependency order
                          @NotNull final NamedScopeManager namedScopeManager,
+                         @SuppressWarnings("UnusedParameters") // for dependency order
                          @NotNull final DependencyValidationManager dependencyValidationManager,
                          @NotNull final FileDocumentManager fileDocumentManager,
                          @NotNull final PsiManager psiManager,
@@ -262,31 +262,19 @@ public class DaemonListeners implements Disposable {
     connection.subscribe(ProjectTopics.PROJECT_ROOTS, new ModuleRootAdapter() {
       @Override
       public void rootsChanged(ModuleRootEvent event) {
-        final FileEditor[] editors = fileEditorManager.getSelectedEditors();
-        if (editors.length == 0) return;
-        application.invokeLater(new Runnable() {
-          @Override
-          public void run() {
-            if (myProject.isDisposed()) return;
-            for (FileEditor fileEditor : editors) {
-              if (fileEditor instanceof TextEditor) {
-                repaintErrorStripeRenderer(((TextEditor)fileEditor).getEditor(), myProject);
-              }
-            }
-          }
-        }, ModalityState.stateForComponent(editors[0].getComponent()));
+        stopDaemonAndRestartAllFiles("Project roots changed");
       }
     });
 
     connection.subscribe(DumbService.DUMB_MODE, new DumbService.DumbModeListener() {
       @Override
       public void enteredDumbMode() {
-        stopDaemonAndRestartAllFiles();
+        stopDaemonAndRestartAllFiles("Dumb mode started");
       }
 
       @Override
       public void exitDumbMode() {
-        stopDaemonAndRestartAllFiles();
+        stopDaemonAndRestartAllFiles("Dumb mode finished");
       }
     });
 
@@ -300,7 +288,7 @@ public class DaemonListeners implements Disposable {
     colorsManager.addEditorColorsListener(new EditorColorsListener() {
       @Override
       public void globalSchemeChange(EditorColorsScheme scheme) {
-        stopDaemonAndRestartAllFiles();
+        stopDaemonAndRestartAllFiles("Global color scheme changed");
       }
     }, this);
 
@@ -317,7 +305,7 @@ public class DaemonListeners implements Disposable {
       public void propertyChanged(@NotNull VirtualFilePropertyEvent event) {
         String propertyName = event.getPropertyName();
         if (VirtualFile.PROP_NAME.equals(propertyName)) {
-          stopDaemonAndRestartAllFiles();
+          stopDaemonAndRestartAllFiles("Virtual file name changed");
           VirtualFile virtualFile = event.getFile();
           PsiFile psiFile = !virtualFile.isValid() ? null : ((PsiManagerEx)psiManager).getFileManager().getCachedPsiFile(virtualFile);
           if (psiFile != null && !myDaemonCodeAnalyzer.isHighlightingAvailable(psiFile)) {
@@ -360,18 +348,10 @@ public class DaemonListeners implements Disposable {
     messageBus.connect().subscribe(SeverityRegistrar.SEVERITIES_CHANGED_TOPIC, new Runnable() {
       @Override
       public void run() {
-        UIUtil.invokeLaterIfNeeded(new Runnable() {
-          @Override
-          public void run() {
-            if (!project.isDisposed()) {
-              for (Editor editor : editorTracker.getActiveEditors()) {
-                repaintErrorStripeRenderer(editor, project);
-              }
-            }
-          }
-        });
+        stopDaemonAndRestartAllFiles("Severities changed");
       }
     });
+
     if (RefResolveService.ENABLED) {
       RefResolveService resolveService = RefResolveService.getInstance(project);
       resolveService.addListener(this, new RefResolveService.Listener() {
@@ -385,6 +365,7 @@ public class DaemonListeners implements Disposable {
   
   static boolean isUnderIgnoredAction(@Nullable Object action) {
     return action instanceof DocumentRunnable.IgnoreDocumentRunnable ||
+           action == DocumentRunnable.IgnoreDocumentRunnable.class ||
            ApplicationManager.getApplication().hasWriteAction(DocumentRunnable.IgnoreDocumentRunnable.class);
   }
 
@@ -398,7 +379,7 @@ public class DaemonListeners implements Disposable {
 
   @Override
   public void dispose() {
-    stopDaemonAndRestartAllFiles();
+    stopDaemonAndRestartAllFiles("Project closed");
     boolean replaced = ((UserDataHolderEx)myProject).replace(DAEMON_INITIALIZED, Boolean.TRUE, Boolean.FALSE);
     LOG.assertTrue(replaced, "Daemon listeners already disposed for the project "+myProject);
   }
@@ -436,7 +417,7 @@ public class DaemonListeners implements Disposable {
     if (activeVcs == null) return Result.NOT_SURE;
 
     FilePath path = VcsUtil.getFilePath(virtualFile);
-    boolean vcsIsThinking = !myVcsDirtyScopeManager.whatFilesDirty(Arrays.asList(path)).isEmpty();
+    boolean vcsIsThinking = !myVcsDirtyScopeManager.whatFilesDirty(Collections.singletonList(path)).isEmpty();
     if (vcsIsThinking) return Result.NOT_SURE; // do not modify file which is in the process of updating
 
     FileStatus status = myFileStatusManager.getStatus(virtualFile);
@@ -456,9 +437,7 @@ public class DaemonListeners implements Disposable {
 
     @Override
     public void writeActionFinished(Object action) {
-      if (myDaemonWasRunning) {
-        stopDaemon(true, "Write action finish");
-      }
+      stopDaemon(true, "Write action finish");
     }
   }
 
@@ -519,7 +498,7 @@ public class DaemonListeners implements Disposable {
     @Override
     public void globalSchemeChange(EditorColorsScheme scheme) {
       TodoConfiguration.getInstance().colorSettingsChanged();
-      stopDaemonAndRestartAllFiles();
+      stopDaemonAndRestartAllFiles("Editor color scheme changed");
     }
   }
 
@@ -527,7 +506,7 @@ public class DaemonListeners implements Disposable {
     @Override
     public void propertyChange(PropertyChangeEvent evt) {
       if (TodoConfiguration.PROP_TODO_PATTERNS.equals(evt.getPropertyName())) {
-        stopDaemonAndRestartAllFiles();
+        stopDaemonAndRestartAllFiles("Todo patterns changed");
       }
     }
   }
@@ -535,21 +514,17 @@ public class DaemonListeners implements Disposable {
   private class MyProfileChangeListener extends ProfileChangeAdapter {
     @Override
     public void profileChanged(Profile profile) {
-      stopDaemonAndRestartAllFiles();
+      stopDaemonAndRestartAllFiles("Profile changed");
     }
 
     @Override
     public void profileActivated(Profile oldProfile, Profile profile) {
-      stopDaemonAndRestartAllFiles();
+      stopDaemonAndRestartAllFiles("Profile activated");
     }
 
     @Override
     public void profilesInitialized() {
       inspectionProfilesInitialized();
-    }
-
-    @Override
-    public void profilesShutdown() {
     }
   }
 
@@ -564,7 +539,7 @@ public class DaemonListeners implements Disposable {
         statusBar.addWidget(myTogglePopupHintsPanel, myProject);
         updateStatusBar();
 
-        stopDaemonAndRestartAllFiles();
+        stopDaemonAndRestartAllFiles("Inspection profiles activated");
       }
     });
   }
@@ -573,16 +548,12 @@ public class DaemonListeners implements Disposable {
     if (myTogglePopupHintsPanel != null) myTogglePopupHintsPanel.updateStatus();
   }
 
-  private class MyAnActionListener implements AnActionListener {
+  private class MyAnActionListener extends AnActionListener.Adapter {
     private final AnAction escapeAction = myActionManager.getAction(IdeActions.ACTION_EDITOR_ESCAPE);
 
     @Override
     public void beforeActionPerformed(AnAction action, DataContext dataContext, AnActionEvent event) {
       myEscPressed = action == escapeAction;
-    }
-
-    @Override
-    public void afterActionPerformed(final AnAction action, final DataContext dataContext, AnActionEvent event) {
     }
 
     @Override
@@ -651,13 +622,13 @@ public class DaemonListeners implements Disposable {
     }
   }
 
-  private void stopDaemon(boolean toRestartAlarm, @NonNls String reason) {
-    myDaemonEventPublisher.daemonCancelEventOccurred();
+  private void stopDaemon(boolean toRestartAlarm, @NonNls @NotNull String reason) {
+    myDaemonEventPublisher.daemonCancelEventOccurred(reason);
     myDaemonCodeAnalyzer.stopProcess(toRestartAlarm, reason);
   }
 
-  private void stopDaemonAndRestartAllFiles() {
-    myDaemonEventPublisher.daemonCancelEventOccurred();
+  private void stopDaemonAndRestartAllFiles(@NotNull String reason) {
+    myDaemonEventPublisher.daemonCancelEventOccurred(reason);
     myDaemonCodeAnalyzer.restart();
   }
 

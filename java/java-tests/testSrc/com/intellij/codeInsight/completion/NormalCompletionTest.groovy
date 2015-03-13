@@ -23,12 +23,11 @@ import com.intellij.codeInsight.lookup.LookupManager
 import com.intellij.codeInsight.lookup.impl.LookupImpl
 import com.intellij.lang.java.JavaLanguage
 import com.intellij.openapi.actionSystem.IdeActions
-import com.intellij.openapi.editor.LogicalPosition
 import com.intellij.psi.PsiDocumentManager
 import com.intellij.psi.PsiMethod
 import com.intellij.psi.codeStyle.CodeStyleSettingsManager
 import com.intellij.psi.codeStyle.CommonCodeStyleSettings
-import com.intellij.testFramework.EditorTestUtil
+import com.siyeh.ig.style.UnqualifiedFieldAccessInspection
 
 public class NormalCompletionTest extends LightFixtureCompletionTestCase {
   @Override
@@ -676,6 +675,7 @@ public class ListUtils {
   }
 
   public void testNothingAfterNumericLiteral() throws Throwable { doAntiTest(); }
+  public void testNothingAfterTypeParameterQualifier() { doAntiTest(); }
 
   public void testSpacesAroundEq() throws Throwable { doTest('='); }
 
@@ -843,6 +843,11 @@ public class ListUtils {
     assertStringItems 'Inner'
   }
 
+  public void testNoThisClassInExtends() throws Throwable {
+    configure()
+    assertStringItems 'Fooxxxx2'
+  }
+
   public void testPrimitiveTypesInForLoop() throws Throwable { doPrimitiveTypeTest() }
   public void testPrimitiveTypesInForLoop2() throws Throwable { doPrimitiveTypeTest() }
   public void testPrimitiveTypesInForLoop3() throws Throwable { doPrimitiveTypeTest() }
@@ -876,6 +881,7 @@ public class ListUtils {
   public void testProtectedInaccessibleOnSecondInvocation() throws Throwable {
     myFixture.configureByFile(getTestName(false) + ".java");
     myFixture.complete(CompletionType.BASIC, 2);
+    myFixture.type('\n')
     checkResult()
   }
 
@@ -927,6 +933,7 @@ public class ListUtils {
 
   public void testTabReplacesMethodNameWithLocalVariableName() throws Throwable { doTest('\t'); }
   public void testMethodParameterAnnotationClass() throws Throwable { doTest(); }
+  public void testInnerAnnotation() { doTest('\n'); }
   public void testPrimitiveCastOverwrite() throws Throwable { doTest '\t' }
   public void testClassReferenceInFor() throws Throwable { doTest ' ' }
   public void testClassReferenceInFor2() throws Throwable { doTest ' ' }
@@ -1396,30 +1403,6 @@ class XInternalError {}
     doTest('\n')
   }
 
-  public void "test block selection from bottom to top with single-item insertion"() {
-    EditorTestUtil.disableMultipleCarets()
-    try {
-      myFixture.configureByText "a.java", """
-  class Foo {{
-    ret<caret>;
-    ret;
-  }}"""
-      edt {
-        def caret = myFixture.editor.offsetToLogicalPosition(myFixture.editor.caretModel.offset)
-        myFixture.editor.selectionModel.setBlockSelection(new LogicalPosition(caret.line + 1, caret.column), caret)
-      }
-      myFixture.completeBasic()
-      myFixture.checkResult '''
-  class Foo {{
-    return<caret>;
-    return;
-  }}'''
-    }
-    finally {
-      EditorTestUtil.enableMultipleCarets()
-    }
-  }
-
   public void testMulticaretSingleItemInsertion() {
     doTest()
   }
@@ -1510,5 +1493,17 @@ class Bar {
     myFixture.assertPreferredCompletionItems(0, "xcreateZoo", "xcreateElephant");
   }
 
+  public void "test code cleanup during completion generation"() {
+    myFixture.configureByText "a.java", "class Foo {int i; ge<caret>}"
+    myFixture.enableInspections(new UnqualifiedFieldAccessInspection())
+    myFixture.complete(CompletionType.BASIC)
+    myFixture.checkResult '''class Foo {int i;
 
+    public int getI() {
+        return this.i;
+    }
+}'''
+  }
+  
+  public void testIndentingForSwitchCase() { doTest() }
 }

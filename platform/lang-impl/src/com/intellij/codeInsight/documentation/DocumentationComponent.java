@@ -42,12 +42,12 @@ import com.intellij.openapi.ui.popup.JBPopup;
 import com.intellij.openapi.util.Disposer;
 import com.intellij.openapi.util.registry.Registry;
 import com.intellij.openapi.util.text.StringUtil;
-import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.openapi.wm.ex.WindowManagerEx;
 import com.intellij.pom.Navigatable;
 import com.intellij.psi.PsiElement;
 import com.intellij.psi.SmartPointerManager;
 import com.intellij.psi.SmartPsiElementPointer;
+import com.intellij.psi.util.PsiModificationTracker;
 import com.intellij.ui.IdeBorderFactory;
 import com.intellij.ui.JBColor;
 import com.intellij.ui.SideBorder;
@@ -55,7 +55,6 @@ import com.intellij.ui.components.JBLayeredPane;
 import com.intellij.ui.components.JBScrollPane;
 import com.intellij.util.Consumer;
 import com.intellij.util.containers.HashMap;
-import com.intellij.util.io.URLUtil;
 import com.intellij.util.ui.GraphicsUtil;
 import com.intellij.util.ui.UIUtil;
 import org.jetbrains.annotations.NonNls;
@@ -68,11 +67,9 @@ import javax.swing.event.ChangeListener;
 import javax.swing.event.HyperlinkEvent;
 import javax.swing.event.HyperlinkListener;
 import javax.swing.text.*;
-import javax.swing.text.html.HTMLDocument;
 import javax.swing.text.html.HTMLEditorKit;
 import java.awt.*;
 import java.awt.event.*;
-import java.net.MalformedURLException;
 import java.net.URL;
 import java.util.*;
 import java.util.List;
@@ -81,19 +78,13 @@ public class DocumentationComponent extends JPanel implements Disposable, DataPr
 
   @NonNls private static final String DOCUMENTATION_TOPIC_ID = "reference.toolWindows.Documentation";
 
-  private static final DataContext EMPTY_DATA_CONTEXT = new DataContext() {
-    @Override
-    public Object getData(@NonNls String dataId) {
-      return null;
-    }
-  };
-
   private static final int PREFERRED_WIDTH_EM = 37;
   private static final int PREFERRED_HEIGHT_MIN_EM = 7;
   private static final int PREFERRED_HEIGHT_MAX_EM = 20;
 
   private DocumentationManager myManager;
   private SmartPsiElementPointer myElement;
+  private long myModificationCount;
 
   private final Stack<Context> myBackStack = new Stack<Context>();
   private final Stack<Context> myForwardStack = new Stack<Context>();
@@ -485,6 +476,19 @@ public class DocumentationComponent extends JPanel implements Disposable, DataPr
     return myElement != null ? myElement.getElement() : null;
   }
 
+  private void setElement(SmartPsiElementPointer element) {
+    myElement = element;
+    myModificationCount = getCurrentModificationCount();
+  }
+
+  public boolean isUpToDate() {
+    return getElement() != null && myModificationCount == getCurrentModificationCount();
+  }
+
+  private long getCurrentModificationCount() {
+    return myElement != null ? PsiModificationTracker.SERVICE.getInstance(myElement.getProject()).getModificationCount() : -1;
+  }
+
   public void setNavigateCallback(Consumer<PsiElement> navigateCallback) {
     myNavigateCallback = navigateCallback;
   }
@@ -531,7 +535,7 @@ public class DocumentationComponent extends JPanel implements Disposable, DataPr
                                            : null;
 
     if (element != null) {
-      myElement = element;
+      setElement(element);
     }
 
     myIsEmpty = false;
@@ -546,10 +550,10 @@ public class DocumentationComponent extends JPanel implements Disposable, DataPr
   }
 
   private void setDataInternal(SmartPsiElementPointer element, String text, final Rectangle viewRect, boolean skip) {
-    myElement = element;
+    setElement(element);
 
     boolean justShown = false;
-    if (!myIsShown && myHint != null) {
+    if (!myIsShown && myHint != null && !ApplicationManager.getApplication().isUnitTestMode()) {
       myEditorPane.setText(text);
       applyFontSize();
       myManager.showHint(myHint);
@@ -563,21 +567,6 @@ public class DocumentationComponent extends JPanel implements Disposable, DataPr
 
     if (!skip) {
       myText = text;
-    }
-
-    Document document = myEditorPane.getDocument();
-    if (document instanceof HTMLDocument && element != null) {
-       // set base URL for this javadoc to resolve relative images correctly
-      VirtualFile virtualFile = element.getVirtualFile();
-      VirtualFile directory = virtualFile == null ? null : virtualFile.getParent();
-      String path = directory == null ? "" : directory.getPath()+"/";
-
-      try {
-        URL url = new URL(URLUtil.FILE_PROTOCOL, null, path);
-        ((HTMLDocument)document).setBase(url);
-      }
-      catch (MalformedURLException ignored) {
-      }
     }
 
     //noinspection SSBasedInspection
@@ -900,9 +889,7 @@ public class DocumentationComponent extends JPanel implements Disposable, DataPr
       if (!mySettingsPanel.isVisible()) {
         return;
       }
-      AnActionEvent event = new AnActionEvent(
-        null, EMPTY_DATA_CONTEXT, ActionPlaces.JAVADOC_INPLACE_SETTINGS, myPresentation, ActionManager.getInstance(), 0
-      );
+      AnActionEvent event = AnActionEvent.createFromDataContext(myPlace, myPresentation, DataContext.EMPTY_CONTEXT);
       myAction.actionPerformed(event);
     }
   }

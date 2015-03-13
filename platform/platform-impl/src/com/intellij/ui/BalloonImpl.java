@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2014 JetBrains s.r.o.
+ * Copyright 2000-2015 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -136,8 +136,11 @@ public class BalloonImpl implements Balloon, IdeTooltip.Ui {
           }
         }
 
-        if (UIUtil.isCloseClick((MouseEvent)e)) {
-          hide();
+        if (UIUtil.isCloseClick(me)) {
+          if (isInsideBalloon(me)) {
+            hide();
+            me.consume();
+          }
           return;
         }
       }
@@ -195,13 +198,16 @@ public class BalloonImpl implements Balloon, IdeTooltip.Ui {
 
   @Override
   public boolean isInside(@NotNull RelativePoint target) {
+    if (myComp == null) return false;
     Component cmp = target.getOriginalComponent();
 
     if (!cmp.isShowing()) return true;
     if (cmp == myCloseRec) return true;
     if (UIUtil.isDescendingFrom(cmp, myComp)) return true;
     if (myComp == null || !myComp.isShowing()) return false;
-    return myComp.contains(target.getScreenPoint().x, target.getScreenPoint().y);
+    Point point = target.getScreenPoint();
+    SwingUtilities.convertPointFromScreen(point, myComp);
+    return myComp.contains(point);
   }
 
   public boolean isMovingForward(RelativePoint target) {
@@ -1071,7 +1077,7 @@ public class BalloonImpl implements Balloon, IdeTooltip.Ui {
 
     @Override
     Point getLocation(final Dimension containerSize, final Point targetPoint, final Dimension balloonSize) {
-      final Point center = UIUtil.getCenterPoint(new Rectangle(targetPoint, new Dimension(0, 0)), balloonSize);
+      final Point center = UIUtil.getCenterPoint(new Rectangle(targetPoint, JBUI.emptySize()), balloonSize);
       return new Point(center.x, targetPoint.y);
     }
 
@@ -1128,7 +1134,7 @@ public class BalloonImpl implements Balloon, IdeTooltip.Ui {
 
     @Override
     Point getLocation(final Dimension containerSize, final Point targetPoint, final Dimension balloonSize) {
-      final Point center = UIUtil.getCenterPoint(new Rectangle(targetPoint, new Dimension(0, 0)), balloonSize);
+      final Point center = UIUtil.getCenterPoint(new Rectangle(targetPoint, JBUI.emptySize()), balloonSize);
       return new Point(center.x, targetPoint.y - balloonSize.height);
     }
 
@@ -1186,7 +1192,7 @@ public class BalloonImpl implements Balloon, IdeTooltip.Ui {
 
     @Override
     Point getLocation(final Dimension containerSize, final Point targetPoint, final Dimension balloonSize) {
-      final Point center = UIUtil.getCenterPoint(new Rectangle(targetPoint, new Dimension(0, 0)), balloonSize);
+      final Point center = UIUtil.getCenterPoint(new Rectangle(targetPoint, JBUI.emptySize()), balloonSize);
       return new Point(targetPoint.x, center.y);
     }
 
@@ -1243,7 +1249,7 @@ public class BalloonImpl implements Balloon, IdeTooltip.Ui {
 
     @Override
     Point getLocation(final Dimension containerSize, final Point targetPoint, final Dimension balloonSize) {
-      final Point center = UIUtil.getCenterPoint(new Rectangle(targetPoint, new Dimension(0, 0)), balloonSize);
+      final Point center = UIUtil.getCenterPoint(new Rectangle(targetPoint, JBUI.emptySize()), balloonSize);
       return new Point(targetPoint.x - balloonSize.width, center.y);
     }
 

@@ -68,6 +68,7 @@ checksum
 chmod
 classpath
 clazz
+clion
 clob
 clojure
 cloneable
@@ -120,6 +121,7 @@ dereference
 dereferences
 desc
 deserializable
+deserialization
 deserialize
 deserializer
 deserializers
@@ -183,9 +185,12 @@ giud
 globals
 google
 gruntfile
+gruntfiles
 gulpfile
+gulpfiles
 gzip
 gzipped
+hadoop
 hamcrest
 hardcoded
 hardlink
@@ -279,6 +284,7 @@ logon
 logout
 longblob
 longtext
+lookahead
 lookup
 lucene
 lvalue
@@ -598,6 +604,7 @@ unboxing
 unbuffered
 uncomment
 uncommented
+uncommenting
 undef
 underwave
 undoable
@@ -610,6 +617,7 @@ unpivot
 unprotect
 unwatch
 uploader
+upsource
 urlencoded
 urowid
 username

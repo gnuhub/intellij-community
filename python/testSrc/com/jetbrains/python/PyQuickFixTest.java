@@ -16,6 +16,7 @@
 package com.jetbrains.python;
 
 import com.intellij.codeInsight.intention.IntentionAction;
+import com.intellij.codeInspection.ex.InspectionProfileImpl;
 import com.intellij.testFramework.TestDataFile;
 import com.intellij.testFramework.TestDataPath;
 import com.jetbrains.python.codeInsight.PyCodeInsightSettings;
@@ -33,6 +34,18 @@ import org.jetbrains.annotations.NonNls;
 @TestDataPath("$CONTENT_ROOT/../testData/inspections/")
 public class PyQuickFixTest extends PyTestCase {
 
+  @Override
+  protected void setUp() throws Exception {
+    super.setUp();
+    InspectionProfileImpl.INIT_INSPECTIONS = true;
+  }
+
+  @Override
+  protected void tearDown() throws Exception {
+    InspectionProfileImpl.INIT_INSPECTIONS = false;
+    super.tearDown();
+  }
+
   public void testAddImport() {
     doInspectionTest(new String[] { "AddImport.py", "ImportTarget.py" }, PyUnresolvedReferencesInspection.class, "Import 'ImportTarget'", true, true);
   }
@@ -46,7 +59,7 @@ public class PyQuickFixTest extends PyTestCase {
   }
 
   public void testImportFromModule() {
-    doInspectionTest(new String[] { "importFromModule/foo/bar.py", "importFromModule/foo/baz.py", "importFromModule/foo/__init__.py" },
+    doInspectionTest(new String[]{"importFromModule/foo/bar.py", "importFromModule/foo/baz.py", "importFromModule/foo/__init__.py"},
                      PyUnresolvedReferencesInspection.class, "Import 'importFromModule.foo.baz'", true, true);
   }
 
@@ -470,11 +483,20 @@ public class PyQuickFixTest extends PyTestCase {
     myFixture.checkResultByFile(graftBeforeExt(fileName, "_after"));
   }
 
+  public void testIgnoreShadowingBuiltins() {
+    myFixture.configureByFile("IgnoreShadowingBuiltins.py");
+    myFixture.enableInspections(PyShadowingBuiltinsInspection.class);
+    final IntentionAction intentionAction = myFixture.getAvailableIntention("Ignore shadowed built-in name \"open\"");
+    assertNotNull(intentionAction);
+    myFixture.launchAction(intentionAction);
+    myFixture.checkHighlighting(true, false, true);
+  }
+
   // PY-8991
   public void testRemoveUnicodePrefixFromGluedStringNodesWithSlash() {
     runWithLanguageLevel(LanguageLevel.PYTHON32, new Runnable() {
       public void run() {
-        myFixture.configureByFiles(getTestDataPath() + getTestName(false) + ".py");
+        myFixture.configureByFile(getTestName(false) + ".py");
         myFixture.checkHighlighting(true, false, false);
         final IntentionAction intentionAction = myFixture.findSingleIntention(PyBundle.message("INTN.remove.leading.$0", "U"));
         assertNotNull(intentionAction);
@@ -488,7 +510,7 @@ public class PyQuickFixTest extends PyTestCase {
   public void testRemoveUnicodePrefixFromGluedStringNodesInParenthesis() {
     runWithLanguageLevel(LanguageLevel.PYTHON32, new Runnable() {
       public void run() {
-        myFixture.configureByFiles(getTestDataPath() + getTestName(false) + ".py");
+        myFixture.configureByFile(getTestName(false) + ".py");
         myFixture.checkHighlighting(true, false, false);
         final IntentionAction intentionAction = myFixture.findSingleIntention(PyBundle.message("INTN.remove.leading.$0", "U"));
         assertNotNull(intentionAction);

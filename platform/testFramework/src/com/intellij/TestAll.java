@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2013 JetBrains s.r.o.
+ * Copyright 2000-2015 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -33,6 +33,7 @@ import com.intellij.testFramework.*;
 import com.intellij.tests.ExternalClasspathClassLoader;
 import com.intellij.util.ArrayUtil;
 import junit.framework.*;
+import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.junit.runner.Description;
 import org.junit.runner.manipulation.Filter;
@@ -161,8 +162,9 @@ public class TestAll implements Test {
   public static void fillTestCases(TestCaseLoader testCaseLoader, String packageRoot, String... classRoots) throws IOException {
     for (String classRoot : classRoots) {
       int oldCount = testCaseLoader.getClasses().size();
-      ClassFinder classFinder = new ClassFinder(new File(FileUtil.toSystemDependentName(classRoot)), packageRoot);
-      testCaseLoader.loadTestCases(classFinder.getClasses());
+      File classRootFile = new File(FileUtil.toSystemDependentName(classRoot));
+      ClassFinder classFinder = new ClassFinder(classRootFile, packageRoot);
+      testCaseLoader.loadTestCases(classRootFile.getName(), classFinder.getClasses());
       int newCount = testCaseLoader.getClasses().size();
       if (newCount != oldCount) {
         System.out.println("Loaded " + (newCount - oldCount) + " tests from class root " + classRoot);
@@ -387,20 +389,17 @@ public class TestAll implements Test {
   }
 
   @Nullable
-  private static Test getTest(final Class testCaseClass) {
-    if ((testCaseClass.getModifiers() & Modifier.PUBLIC) == 0) return null;
+  private static Test getTest(@NotNull final Class testCaseClass) {
+    try {
+      if ((testCaseClass.getModifiers() & Modifier.PUBLIC) == 0) {
+        return null;
+      }
 
-    Method suiteMethod = safeFindMethod(testCaseClass, "suite");
-    if (suiteMethod != null && !isPerformanceTestsRun()) {
-      try {
+      Method suiteMethod = safeFindMethod(testCaseClass, "suite");
+      if (suiteMethod != null && !isPerformanceTestsRun()) {
         return (Test)suiteMethod.invoke(null, ArrayUtil.EMPTY_CLASS_ARRAY);
       }
-      catch (Exception e) {
-        System.err.println("Failed to execute suite ()");
-        e.printStackTrace();
-      }
-    }
-    else {
+
       if (TestRunnerUtil.isJUnit4TestClass(testCaseClass)) {
         JUnit4TestAdapter adapter = new JUnit4TestAdapter(testCaseClass);
         if (!isPerformanceTest(testCaseClass) || !isPerformanceTestsRun()) {
@@ -442,8 +441,11 @@ public class TestAll implements Test {
 
       return testsCount[0] > 0 ? suite : null;
     }
-
-    return null;
+    catch (Throwable t) {
+      System.err.println("Failed to load test: " + testCaseClass.getName());
+      t.printStackTrace(System.err);
+      return null;
+    }
   }
 
 

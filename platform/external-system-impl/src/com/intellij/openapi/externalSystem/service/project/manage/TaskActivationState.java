@@ -19,8 +19,8 @@ import com.intellij.util.xmlb.annotations.AbstractCollection;
 import com.intellij.util.xmlb.annotations.Tag;
 import org.jetbrains.annotations.NotNull;
 
-import java.util.Set;
-import java.util.TreeSet;
+import java.util.ArrayList;
+import java.util.List;
 
 /**
 * @author Vladislav.Soroka
@@ -28,41 +28,54 @@ import java.util.TreeSet;
 */
 @Tag("activation")
 public class TaskActivationState {
+  @Tag("before_sync")
+  @AbstractCollection(surroundWithTag = false, elementTag = "task", elementValueAttribute = "name")
+  public List<String> beforeSyncTasks = new ArrayList<String>();
+
   @Tag("after_sync")
   @AbstractCollection(surroundWithTag = false, elementTag = "task", elementValueAttribute = "name")
-  public Set<String> afterSyncTasks = new TreeSet<String>();
+  public List<String> afterSyncTasks = new ArrayList<String>();
 
   @Tag("before_compile")
   @AbstractCollection(surroundWithTag = false, elementTag = "task", elementValueAttribute = "name")
-  public Set<String> beforeCompileTasks = new TreeSet<String>();
+  public List<String> beforeCompileTasks = new ArrayList<String>();
 
   @Tag("after_compile")
   @AbstractCollection(surroundWithTag = false, elementTag = "task", elementValueAttribute = "name")
-  public Set<String> afterCompileTasks = new TreeSet<String>();
+  public List<String> afterCompileTasks = new ArrayList<String>();
 
   @Tag("after_rebuild")
   @AbstractCollection(surroundWithTag = false, elementTag = "task", elementValueAttribute = "name")
-  public Set<String> afterRebuildTask = new TreeSet<String>();
+  public List<String> afterRebuildTask = new ArrayList<String>();
 
   @Tag("before_rebuild")
   @AbstractCollection(surroundWithTag = false, elementTag = "task", elementValueAttribute = "name")
-  public Set<String> beforeRebuildTask = new TreeSet<String>();
+  public List<String> beforeRebuildTask = new ArrayList<String>();
+
+  public boolean isEmpty() {
+    for (ExternalSystemTaskActivator.Phase phase : ExternalSystemTaskActivator.Phase.values()) {
+      if (!getTasks(phase).isEmpty()) return false;
+    }
+    return true;
+  }
 
   @NotNull
-  public Set<String> getTasks(@NotNull ExternalSystemTaskActivator.Phase phase) {
+  public List<String> getTasks(@NotNull ExternalSystemTaskActivator.Phase phase) {
     switch (phase) {
       case AFTER_COMPILE:
         return afterCompileTasks;
-      case AFTER_SYNC:
-        return afterSyncTasks;
       case BEFORE_COMPILE:
         return beforeCompileTasks;
+      case AFTER_SYNC:
+        return afterSyncTasks;
+      case BEFORE_SYNC:
+        return beforeSyncTasks;
       case AFTER_REBUILD:
         return afterRebuildTask;
       case BEFORE_REBUILD:
         return beforeRebuildTask;
       default:
-        throw new RuntimeException();
+        throw new IllegalArgumentException("Unknown task activation phase: " + phase);
     }
   }
 }

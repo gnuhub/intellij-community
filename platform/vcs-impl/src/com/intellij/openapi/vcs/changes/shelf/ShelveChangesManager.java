@@ -25,6 +25,7 @@ package com.intellij.openapi.vcs.changes.shelf;
 import com.intellij.lifecycle.PeriodicalTasksCloser;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.application.PathManager;
+import com.intellij.openapi.application.impl.LaterInvocator;
 import com.intellij.openapi.components.AbstractProjectComponent;
 import com.intellij.openapi.components.StorageScheme;
 import com.intellij.openapi.diagnostic.Logger;
@@ -182,7 +183,9 @@ public class ShelveChangesManager extends AbstractProjectComponent implements JD
 
       if (rollback) {
         final String operationName = UIUtil.removeMnemonic(RollbackChangesDialog.operationNameByChanges(myProject, changes));
-        new RollbackWorker(myProject, operationName).doRollback(changes, true, null, VcsBundle.message("shelve.changes.action"));
+        boolean modalContext = ApplicationManager.getApplication().isDispatchThread() && LaterInvocator.isInModalContext();
+        new RollbackWorker(myProject, operationName, modalContext).
+          doRollback(changes, true, null, VcsBundle.message("shelve.changes.action"));
       }
     }
     finally {
@@ -665,10 +668,26 @@ public class ShelveChangesManager extends AbstractProjectComponent implements JD
     notifyStateChanged();
   }
 
-  // todo problem: control usage
-  public static List<TextFilePatch> loadPatches(Project project, final String patchPath, CommitContext commitContext) throws IOException, PatchSyntaxException {
+  @NotNull
+  public static List<TextFilePatch> loadPatches(Project project,
+                                                final String patchPath,
+                                                CommitContext commitContext) throws IOException, PatchSyntaxException {
+    return loadPatches(project, patchPath, commitContext, true);
+  }
+
+  @NotNull
+  static List<? extends FilePatch> loadPatchesWithoutContent(Project project,
+                                                             final String patchPath,
+                                                             CommitContext commitContext) throws IOException, PatchSyntaxException {
+    return loadPatches(project, patchPath, commitContext, false);
+  }
+
+  private static List<TextFilePatch> loadPatches(Project project,
+                                                 final String patchPath,
+                                                 CommitContext commitContext,
+                                                 boolean loadContent) throws IOException, PatchSyntaxException {
     char[] text = FileUtil.loadFileText(new File(patchPath), CharsetToolkit.UTF8);
-    PatchReader reader = new PatchReader(new CharArrayCharSequence(text));
+    PatchReader reader = new PatchReader(new CharArrayCharSequence(text), loadContent);
     final List<TextFilePatch> textFilePatches = reader.readAllPatches();
     final TransparentlyFailedValueI<Map<String, Map<String, CharSequence>>, PatchSyntaxException> additionalInfo = reader.getAdditionalInfo(
       null);

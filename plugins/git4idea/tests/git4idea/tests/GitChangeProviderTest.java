@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2010 JetBrains s.r.o.
+ * Copyright 2000-2014 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -167,7 +167,7 @@ public abstract class GitChangeProviderTest extends GitSingleRepoTest {
       FilePath fp = new FilePathImpl(virtualFiles[i]);
       FileStatus status = fileStatuses[i];
       if (status == null) {
-        assertFalse("File [" + tos(fp) + " shouldn't be in the change list, but it was.", result.containsKey(fp));
+        assertFalse("File [" + tos(fp) + " shouldn't be in the changelist, but it was.", result.containsKey(fp));
         continue;
       }
       assertTrue("File [" + tos(fp) + "] didn't change. Changes: " + tos(result), result.containsKey(fp));
@@ -222,7 +222,7 @@ public abstract class GitChangeProviderTest extends GitSingleRepoTest {
 
   private VirtualFile create(VirtualFile parent, String name, boolean dir) {
     final VirtualFile file = dir ?
-                             VcsTestUtil.createDir(myProject, parent, name) :
+                             VcsTestUtil.findOrCreateDir(myProject, parent, name) :
                              createFile(myProject, parent, name, "content" + Math.random());
     dirty(file);
     return file;

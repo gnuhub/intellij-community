@@ -20,6 +20,8 @@ import com.intellij.codeInspection.deadCode.UnusedDeclarationInspection;
 import com.intellij.openapi.projectRoots.JavaSdkVersion;
 import com.intellij.openapi.projectRoots.Sdk;
 import com.intellij.testFramework.IdeaTestUtil;
+import com.intellij.testFramework.PlatformTestUtil;
+import com.intellij.util.ThrowableRunnable;
 import org.jetbrains.annotations.NonNls;
 
 public class OverloadResolutionTest extends LightDaemonAnalyzerTestCase {
@@ -47,6 +49,18 @@ public class OverloadResolutionTest extends LightDaemonAnalyzerTestCase {
     doTest();
   }
 
+  public void testVoidValueCompatibilityCantCompleteNormallyWithCallWithExceptionAsLastReturnStatement() throws Exception {
+    doTest();
+  }
+
+  public void testTryCatchWithoutFinallyBlockProcessing() throws Exception {
+    doTest(false);
+  }
+
+  public void testValueCompatibleWithThrowsStatement() throws Exception {
+    doTest(false);
+  }
+
   public void testIDEA102800() throws Exception {
     doTest();
   }
@@ -57,6 +71,31 @@ public class OverloadResolutionTest extends LightDaemonAnalyzerTestCase {
 
   public void testIgnoreNonFunctionalArgumentsWhenCheckIfFunctionalMoreSpecific() throws Exception {
     doTest();
+  }
+
+  public void testLambdaIsNotCongruentWithFunctionalTypeWithTypeParams() throws Exception {
+    doTest();
+  }
+
+  public void testDetectPolyExpressionInReturnsOfExplicitlyTypedLambdaWhenPrimitiveCouldWin() throws Exception {
+    doTest();
+  }
+
+  public void testDetectNotEqualParametersInFunctionalTypesForExactMethodReferences() throws Exception {
+    doTest();
+  }
+
+  public void testPreferDefaultMethodsOverStatic() throws Exception {
+    doTest();
+  }
+
+  public void testManyOverloadsWithVarargs() throws Exception {
+    PlatformTestUtil.startPerformanceTest("Overload resolution with 14 overloads", 20000, new ThrowableRunnable() {
+      @Override
+      public void run() throws Throwable {
+        doTest(false);
+      }
+    }).assertTiming();
   }
 
   private void doTest() {

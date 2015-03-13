@@ -26,6 +26,7 @@ import com.intellij.openapi.util.LowMemoryWatcher;
 import com.intellij.openapi.util.ShutDownTracker;
 import com.intellij.openapi.util.SystemInfo;
 import com.intellij.openapi.util.io.*;
+import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.openapi.vfs.*;
 import com.intellij.openapi.vfs.ex.temp.TempFileSystem;
 import com.intellij.openapi.vfs.newvfs.*;
@@ -233,6 +234,9 @@ public class PersistentFSImpl extends PersistentFS implements ApplicationCompone
 
   @Nullable
   private static DataInputStream readContent(@NotNull VirtualFile file) {
+    if (StringUtil.endsWith(file.getNameSequence(), ".java")) {
+      int a = 1;
+    }
     return FSRecords.readContent(getFileId(file));
   }
 
@@ -622,6 +626,8 @@ public class PersistentFSImpl extends PersistentFS implements ApplicationCompone
       public void close() throws IOException {
         if (closed) return;
         super.close();
+
+        ApplicationManager.getApplication().assertWriteAccessAllowed();
 
         VFileContentChangeEvent event = new VFileContentChangeEvent(requestor, file, file.getModificationStamp(), modStamp, false);
         List<VFileContentChangeEvent> events = Collections.singletonList(event);
@@ -1323,7 +1329,7 @@ public class PersistentFSImpl extends PersistentFS implements ApplicationCompone
     @NotNull
     @Override
     public CharSequence getNameSequence() {
-      return myParentLocalFile.getName();
+      return myParentLocalFile.getNameSequence();
     }
 
     @Override

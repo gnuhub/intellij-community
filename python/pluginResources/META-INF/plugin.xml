@@ -4,7 +4,7 @@
 
   <id>PythonCore</id>
   <name>Python Community Edition</name>
-  <idea-version since-build="138.0" until-build="140.*"/>
+  <idea-version since-build="138.0" until-build="143.0"/>
 
   <description><![CDATA[
 The Python plug-in provides smart editing for Python scripts. The feature set of the plugin
@@ -15,8 +15,8 @@ The Python plug-in provides smart editing for Python scripts. The feature set of
 <a href="https://youtrack.jetbrains.com/issues/PY">Issue tracker</a><br>
 ]]></description>
 
-  <!-- <PyCharm version> <Beta>? <Branch number>.<Build number> -->
-  <version>4.0 Beta 140.@@BUILD_NUMBER@@</version>
+  <!-- <PyCharm version> <Build number> (<Beta>|<EAP>|<RC>)? -->
+  <version>@@PYCHARM_VERSION@@ @@BUILD_NUMBER@@ EAP</version>
   <depends>com.intellij.modules.java</depends>
 
 

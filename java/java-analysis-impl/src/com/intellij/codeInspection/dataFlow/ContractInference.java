@@ -17,17 +17,16 @@ package com.intellij.codeInspection.dataFlow;
 
 import com.intellij.codeInsight.NullableNotNullManager;
 import com.intellij.codeInspection.dataFlow.MethodContract.ValueConstraint;
-import com.intellij.openapi.roots.FileIndexFacade;
+import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.util.Computable;
 import com.intellij.openapi.util.Condition;
 import com.intellij.openapi.util.RecursionManager;
-import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.psi.*;
 import com.intellij.psi.tree.IElementType;
 import com.intellij.psi.util.CachedValueProvider;
 import com.intellij.psi.util.CachedValuesManager;
 import com.intellij.psi.util.PsiModificationTracker;
-import com.intellij.psi.util.PsiUtilCore;
+import com.intellij.psi.util.PsiUtil;
 import com.intellij.util.Function;
 import com.intellij.util.NullableFunction;
 import com.intellij.util.containers.ContainerUtil;
@@ -44,13 +43,14 @@ import static com.intellij.codeInspection.dataFlow.MethodContract.ValueConstrain
  * @author peter
  */
 public class ContractInference {
+  public static final int MAX_CONTRACT_COUNT = 10;
 
   @NotNull
   public static List<MethodContract> inferContracts(@NotNull final PsiMethod method) {
-    if (isLibraryCode(method)) {
+    if (!InferenceFromSourceUtil.shouldInferFromSource(method)) {
       return Collections.emptyList();
     }
-
+    
     return CachedValuesManager.getCachedValue(method, new CachedValueProvider<List<MethodContract>>() {
       @Nullable
       @Override
@@ -66,15 +66,10 @@ public class ContractInference {
       }
     });
   }
-
-  static boolean isLibraryCode(@NotNull PsiMethod method) {
-    if (method instanceof PsiCompiledElement) return true;
-    VirtualFile virtualFile = PsiUtilCore.getVirtualFile(method);
-    return virtualFile != null && FileIndexFacade.getInstance(method.getProject()).isInLibrarySource(virtualFile);
-  }
 }
 
 class ContractInferenceInterpreter {
+  private static final Logger LOG = Logger.getInstance("#com.intellij.codeInspection.dataFlow.ContractInferenceInterpreter");
   private final PsiMethod myMethod;
   private final ValueConstraint[] myEmptyConstraints;
 
@@ -95,15 +90,20 @@ class ContractInferenceInterpreter {
     if (referenceTypeReturned) {
       contracts = boxReturnValues(contracts);
     }
-    return ContainerUtil.filter(contracts, new Condition<MethodContract>() {
+    List<MethodContract> compatible = ContainerUtil.filter(contracts, new Condition<MethodContract>() {
       @Override
       public boolean value(MethodContract contract) {
         if (notNull && contract.returnValue == NOT_NULL_VALUE) {
           return false;
         }
-        return ContractInspection.isReturnTypeCompatible(returnType, contract.returnValue);
+        return InferenceFromSourceUtil.isReturnTypeCompatible(returnType, contract.returnValue);
       }
     });
+    if (compatible.size() > ContractInference.MAX_CONTRACT_COUNT) {
+      LOG.debug("Too many contracts for " + PsiUtil.getMemberQualifiedName(myMethod) + ", shrinking the list");
+      return compatible.subList(0, ContractInference.MAX_CONTRACT_COUNT);
+    }
+    return compatible;
   }
 
   @NotNull

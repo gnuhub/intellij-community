@@ -35,6 +35,7 @@ import com.intellij.openapi.progress.ProgressIndicator;
 import com.intellij.openapi.progress.ProgressManager;
 import com.intellij.openapi.progress.util.ProgressWrapper;
 import com.intellij.openapi.progress.util.TooManyUsagesStatus;
+import com.intellij.openapi.project.DumbService;
 import com.intellij.openapi.project.DumbServiceImpl;
 import com.intellij.openapi.project.IndexNotReadyException;
 import com.intellij.openapi.project.Project;
@@ -42,12 +43,13 @@ import com.intellij.openapi.util.Computable;
 import com.intellij.openapi.util.Factory;
 import com.intellij.openapi.util.TextRange;
 import com.intellij.openapi.util.text.StringUtil;
-import com.intellij.openapi.vfs.*;
+import com.intellij.openapi.vfs.LocalFileProvider;
+import com.intellij.openapi.vfs.LocalFileSystem;
+import com.intellij.openapi.vfs.VirtualFile;
+import com.intellij.openapi.vfs.VirtualFileManager;
 import com.intellij.openapi.vfs.ex.VirtualFileManagerEx;
 import com.intellij.psi.*;
-import com.intellij.psi.search.GlobalSearchScope;
-import com.intellij.psi.search.LocalSearchScope;
-import com.intellij.psi.search.SearchScope;
+import com.intellij.psi.search.*;
 import com.intellij.ui.content.Content;
 import com.intellij.usageView.UsageInfo;
 import com.intellij.usageView.UsageViewManager;
@@ -205,7 +207,7 @@ public class FindInProjectUtil {
     TooManyUsagesStatus tooManyUsagesStatus = TooManyUsagesStatus.getFrom(indicator);
     do {
       tooManyUsagesStatus.pauseProcessingIfTooManyUsages(); // wait for user out of read action
-      found = ApplicationManager.getApplication().runReadAction(new Computable<Integer>() {
+      found = DumbService.getInstance(psiFile.getProject()).runReadActionInSmartMode(new Computable<Integer>() {
         @Override
         @NotNull
         public Integer compute() {
@@ -435,54 +437,20 @@ public class FindInProjectUtil {
         sink.put(UsageView.USAGE_SCOPE, scope);
       }
     }
-
   }
 
   @NotNull
-  private static SearchScope getScopeFromModel(@NotNull Project project, @NotNull FindModel findModel) {
+  static SearchScope getScopeFromModel(@NotNull Project project, @NotNull FindModel findModel) {
     SearchScope customScope = findModel.getCustomScope();
     PsiDirectory psiDir = getPsiDirectory(findModel, project);
     VirtualFile directory = psiDir == null ? null : psiDir.getVirtualFile();
     Module module = findModel.getModuleName() == null ? null : ModuleManager.getInstance(project).findModuleByName(findModel.getModuleName());
     return findModel.isCustomScope() && customScope != null ? customScope :
-                        directory != null ? new UnderDirectoryScope(directory) :
-                        module != null ? GlobalSearchScope.moduleScope(module) :
-                        findModel.isProjectScope() ? GlobalSearchScope.projectScope(project) :
-                        GlobalSearchScope.allScope(project);
-  }
-
-  private static class UnderDirectoryScope extends GlobalSearchScope {
-    @NotNull private final VirtualFile myRoot;
-
-    private UnderDirectoryScope(@NotNull VirtualFile root) {
-      myRoot = root;
-      assert root.isDirectory();
-    }
-
-    @NotNull
-    @Override
-    public String getDisplayName() {
-      return "Directory '" + myRoot.getName() + "'";
-    }
-
-    @Override
-    public boolean contains(@NotNull VirtualFile file) {
-      return VfsUtilCore.isAncestor(myRoot, file, false);
-    }
-
-    @Override
-    public int compare(@NotNull VirtualFile file1, @NotNull VirtualFile file2) {
-      return 0;
-    }
-
-    @Override
-    public boolean isSearchInModuleContent(@NotNull Module aModule) {
-      return false;
-    }
-
-    @Override
-    public boolean isSearchInLibraries() {
-      return false;
-    }
+           // we don't have to check for myProjectFileIndex.isExcluded(file) here like FindInProjectTask.collectFilesInScope() does
+           // because all found usages are guaranteed to be not in excluded dir
+           directory != null ? GlobalSearchScopesCore.directoryScope(project, directory, findModel.isWithSubdirectories()) :
+           module != null ? module.getModuleContentScope() :
+           findModel.isProjectScope() ? ProjectScope.getContentScope(project) :
+           GlobalSearchScope.allScope(project);
   }
 }

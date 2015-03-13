@@ -27,9 +27,12 @@ target(compile: "Compile project") {
   }
 
   loadProject()
-  projectBuilder.targetFolder = projectBuilder.buildIncrementally ? "$home/out/incremental-build" : out
-  projectBuilder.cleanOutput()
-  projectBuilder.buildAll()
+  prepareOutputFolder()
+
+  if (!isDefined("avoid.project.rebuild")) {
+    projectBuilder.cleanOutput()
+    projectBuilder.buildAll()
+  }
 }
 
 private pass(String prop) {
@@ -63,7 +66,7 @@ target('run_tests': 'Run java tests') {
         };
       }
 
-      commonJvmArgs().each { jvmarg(value: it) }
+      commonJvmArgsForTests().each { jvmarg(value: it) }
 
       jvmarg(value: "-Dbootstrap.testcases=$testCase")
 

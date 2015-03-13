@@ -24,8 +24,6 @@ import com.intellij.ide.ui.search.OptionDescription;
 import com.intellij.ide.util.PropertiesComponent;
 import com.intellij.openapi.actionSystem.*;
 import com.intellij.openapi.actionSystem.ex.ComboBoxAction;
-import com.intellij.openapi.application.ex.ApplicationEx;
-import com.intellij.openapi.application.ex.ApplicationManagerEx;
 import com.intellij.openapi.extensions.PluginId;
 import com.intellij.openapi.fileChooser.FileChooser;
 import com.intellij.openapi.fileChooser.FileChooserDescriptor;
@@ -482,7 +480,7 @@ public class InstalledPluginsManagerMain extends PluginManagerMain {
     }
   }
 
-  public static class InstallFromDiskAction extends AnAction {
+  public static class InstallFromDiskAction extends DumbAwareAction {
     public InstallFromDiskAction(@Nullable String text) {
       super(text, "", AllIcons.Nodes.Plugin);
     }
@@ -492,11 +490,7 @@ public class InstalledPluginsManagerMain extends PluginManagerMain {
       chooseAndInstall(new InstalledPluginsTableModel(), new Consumer<Pair<File, IdeaPluginDescriptor>>() {
         @Override
         public void consume(Pair<File, IdeaPluginDescriptor> pair) {
-          ApplicationEx app = ApplicationManagerEx.getApplicationEx();
-          int response = app.isRestartCapable() ? PluginManagerConfigurable.showRestartIDEADialog() : PluginManagerConfigurable.showShutDownIDEADialog();
-          if (response == Messages.YES) {
-            app.restart(true);
-          }
+          PluginManagerConfigurable.shutdownOrRestartApp();
         }
       }, null);
     }

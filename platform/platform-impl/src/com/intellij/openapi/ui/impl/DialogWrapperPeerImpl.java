@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2014 JetBrains s.r.o.
+ * Copyright 2000-2015 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -214,7 +214,8 @@ public class DialogWrapperPeerImpl extends DialogWrapperPeer implements FocusTra
 
   @Deprecated
   public DialogWrapperPeerImpl(@NotNull DialogWrapper wrapper,final Window owner, final boolean canBeParent, final boolean applicationModalIfPossible) {
-      this(wrapper, owner, canBeParent, applicationModalIfPossible ? DialogWrapper.IdeModalityType.IDE : DialogWrapper.IdeModalityType.PROJECT);
+      this(wrapper, owner, canBeParent,
+           applicationModalIfPossible ? DialogWrapper.IdeModalityType.IDE : DialogWrapper.IdeModalityType.PROJECT);
   }
 
   @Override
@@ -299,10 +300,6 @@ public class DialogWrapperPeerImpl extends DialogWrapperPeer implements FocusTra
     else {
       SwingUtilities.invokeLater(disposer);
     }
-  }
-
-  private boolean isProgressDialog() {
-    return myWrapper.isModalProgress();
   }
 
   @Override
@@ -452,11 +449,9 @@ public class DialogWrapperPeerImpl extends DialogWrapperPeer implements FocusTra
       ApplicationManager.getApplication() != null ? (CommandProcessorEx)CommandProcessor.getInstance() : null;
     final boolean appStarted = commandProcessor != null;
 
-    if (myDialog.isModal() && !isProgressDialog()) {
-      if (appStarted) {
-        commandProcessor.enterModal();
-        LaterInvocator.enterModal(myDialog);
-      }
+    if (myDialog.isModal() && appStarted) {
+      commandProcessor.enterModal();
+      LaterInvocator.enterModal(myDialog);
     }
 
     if (appStarted) {
@@ -467,11 +462,9 @@ public class DialogWrapperPeerImpl extends DialogWrapperPeer implements FocusTra
       myDialog.show();
     }
     finally {
-      if (myDialog.isModal() && !isProgressDialog()) {
-        if (appStarted) {
-          commandProcessor.leaveModal();
-          LaterInvocator.leaveModal(myDialog);
-        }
+      if (myDialog.isModal() && appStarted) {
+        commandProcessor.leaveModal();
+        LaterInvocator.leaveModal(myDialog);
       }
 
       myDialog.getFocusManager().doWhenFocusSettlesDown(result.createSetDoneRunnable());
@@ -984,16 +977,10 @@ public class DialogWrapperPeerImpl extends DialogWrapperPeer implements FocusTra
             setupSelectionOnPreferredComponent(toFocus);
 
             if (toFocus != null) {
-              final JComponent toRequest = toFocus;
-              SwingUtilities.invokeLater(new Runnable() {
-                @Override
-                public void run() {
-                  if (isShowing() && isActive()) {
-                    getFocusManager().requestFocus(toRequest, true);
-                    notifyFocused(wrapper);
-                  }
-                }
-              });
+              if (isShowing() && isActive()) {
+                getFocusManager().requestFocus(toFocus, true);
+                notifyFocused(wrapper);
+              }
             } else {
               if (isShowing()) {
                 notifyFocused(wrapper);

@@ -35,7 +35,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 public class NullityInference {
 
   public static Nullness inferNullity(final PsiMethod method) {
-    if (ContractInference.isLibraryCode(method)) {
+    if (!InferenceFromSourceUtil.shouldInferFromSource(method)) {
       return Nullness.UNKNOWN;
     }
 
@@ -117,7 +117,7 @@ public class NullityInference {
       });
       
       if (hasNulls.get()) {
-        return Nullness.NULLABLE;
+        return InferenceFromSourceUtil.suppressNullable(method) ? Nullness.UNKNOWN : Nullness.NULLABLE;
       }
       
       if (hasErrors.get() || hasUnknowns.get() || delegates.size() > 1) {

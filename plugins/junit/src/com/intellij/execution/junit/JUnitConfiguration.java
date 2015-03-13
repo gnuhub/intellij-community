@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2013 JetBrains s.r.o.
+ * Copyright 2000-2015 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -56,6 +56,12 @@ public class JUnitConfiguration extends ModuleBasedConfiguration<JavaRunConfigur
   @NonNls public static final String TEST_DIRECTORY = "directory";
   @NonNls public static final String TEST_CATEGORY = "category";
   @NonNls public static final String TEST_METHOD = "method";
+
+  //fork modes
+  @NonNls public static final String FORK_NONE = "none";
+  @NonNls public static final String FORK_METHOD = "method";
+  @NonNls public static final String FORK_KLASS = "class";
+
   @NonNls private static final String PATTERN_EL_NAME = "pattern";
   @NonNls public static final String TEST_PATTERN = PATTERN_EL_NAME;
 
@@ -373,7 +379,6 @@ public class JUnitConfiguration extends ModuleBasedConfiguration<JavaRunConfigur
       element.addContent(forkModeElement);
     }
     element.addContent(patternsElement);
-    PathMacroManager.getInstance(getProject()).collapsePathsRecursively(element);
   }
 
   public void configureClasspath(final JavaParameters javaParameters) throws CantRunException {

@@ -51,7 +51,6 @@ import org.jetbrains.plugins.gradle.remote.impl.GradleLibraryNamesMixer;
 import org.jetbrains.plugins.gradle.settings.ClassHolder;
 import org.jetbrains.plugins.gradle.settings.GradleExecutionSettings;
 import org.jetbrains.plugins.gradle.util.GradleConstants;
-import org.jetbrains.plugins.gradle.util.GradleEnvironment;
 
 import java.io.File;
 import java.util.*;
@@ -154,12 +153,9 @@ public class GradleProjectResolver implements ExternalSystemProjectResolver<Grad
 
     BuildActionExecuter<ProjectImportAction.AllModels> buildActionExecutor = resolverCtx.getConnection().action(projectImportAction);
 
-    // TODO [vlad] remove the check
-    if (!GradleEnvironment.DISABLE_ENHANCED_TOOLING_API) {
-      File initScript = GradleExecutionHelper.generateInitScript(isBuildSrcProject, toolingExtensionClasses);
-      if (initScript != null) {
-        ContainerUtil.addAll(commandLineArgs, GradleConstants.INIT_SCRIPT_CMD_OPTION, initScript.getAbsolutePath());
-      }
+    File initScript = GradleExecutionHelper.generateInitScript(isBuildSrcProject, toolingExtensionClasses);
+    if (initScript != null) {
+      ContainerUtil.addAll(commandLineArgs, GradleConstants.INIT_SCRIPT_CMD_OPTION, initScript.getAbsolutePath());
     }
 
     GradleExecutionHelper.prepare(
@@ -298,7 +294,6 @@ public class GradleProjectResolver implements ExternalSystemProjectResolver<Grad
                                      @NotNull final ProjectConnectionDataNodeFunction projectConnectionDataNodeFunction) {
 
     if (projectConnectionDataNodeFunction.myIsPreviewMode
-        || GradleEnvironment.DISABLE_ENHANCED_TOOLING_API
         || !new File(projectConnectionDataNodeFunction.myProjectPath).isDirectory()) {
       return;
     }
@@ -318,7 +313,13 @@ public class GradleProjectResolver implements ExternalSystemProjectResolver<Grad
       projectConnectionDataNodeFunction.myProjectPath, projectConnectionDataNodeFunction.mySettings, projectConnectionDataNodeFunction);
 
     if (buildSrcProjectDataDataNode != null) {
-      final DataNode<ModuleData> moduleDataNode = ExternalSystemApiUtil.find(buildSrcProjectDataDataNode, ProjectKeys.MODULE);
+      final DataNode<ModuleData> moduleDataNode = ExternalSystemApiUtil.find(
+        buildSrcProjectDataDataNode, ProjectKeys.MODULE, new BooleanFunction<DataNode<ModuleData>>() {
+          @Override
+          public boolean fun(DataNode<ModuleData> node) {
+            return projectConnectionDataNodeFunction.myProjectPath.equals(node.getData().getLinkedExternalProjectPath());
+          }
+        });
       if (moduleDataNode != null) {
         for (DataNode<LibraryData> libraryDataNode : ExternalSystemApiUtil.findAll(buildSrcProjectDataDataNode, ProjectKeys.LIBRARY)) {
           resultProjectDataNode.createChild(libraryDataNode.getKey(), libraryDataNode.getData());
@@ -326,6 +327,7 @@ public class GradleProjectResolver implements ExternalSystemProjectResolver<Grad
 
         final DataNode<ModuleData> newModuleDataNode = resultProjectDataNode.createChild(ProjectKeys.MODULE, moduleDataNode.getData());
         for (DataNode node : moduleDataNode.getChildren()) {
+          if(!ProjectKeys.MODULE.equals(node.getKey()) && !ProjectKeys.MODULE_DEPENDENCY.equals(node.getKey()))
           newModuleDataNode.createChild(node.getKey(), node.getData());
         }
       }

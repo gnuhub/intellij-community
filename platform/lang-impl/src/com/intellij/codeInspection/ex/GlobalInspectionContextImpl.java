@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2014 JetBrains s.r.o.
+ * Copyright 2000-2015 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -380,17 +380,17 @@ public class GlobalInspectionContextImpl extends GlobalInspectionContextBase imp
       final List<LocalInspectionToolWrapper> lTools = getWrappersFromTools(localTools, file);
       pass.doInspectInBatch(this, inspectionManager, lTools);
 
-      JobLauncher.getInstance().invokeConcurrentlyUnderProgress(globalSimpleTools, myProgressIndicator, false, new Processor<Tools>() {
+      final List<GlobalInspectionToolWrapper> tools = getWrappersFromTools(globalSimpleTools, file);
+      JobLauncher.getInstance().invokeConcurrentlyUnderProgress(tools, myProgressIndicator, false, new Processor<GlobalInspectionToolWrapper>() {
         @Override
-        public boolean process(Tools tools) {
-          GlobalInspectionToolWrapper toolWrapper = (GlobalInspectionToolWrapper)tools.getTool();
+        public boolean process(GlobalInspectionToolWrapper toolWrapper) {
           GlobalSimpleInspectionTool tool = (GlobalSimpleInspectionTool)toolWrapper.getTool();
-          ProblemsHolder problemsHolder = new ProblemsHolder(inspectionManager, file, false);
+          ProblemsHolder holder = new ProblemsHolder(inspectionManager, file, false);
           ProblemDescriptionsProcessor problemDescriptionProcessor = getProblemDescriptionProcessor(toolWrapper, wrappersMap);
-          tool.checkFile(file, inspectionManager, problemsHolder, GlobalInspectionContextImpl.this, problemDescriptionProcessor);
+          tool.checkFile(file, inspectionManager, holder, GlobalInspectionContextImpl.this, problemDescriptionProcessor);
           InspectionToolPresentation toolPresentation = getPresentation(toolWrapper);
-          LocalDescriptorsUtil.addProblemDescriptors(problemsHolder.getResults(), false, GlobalInspectionContextImpl.this, null,
-                                                     CONVERT, toolPresentation);
+          LocalDescriptorsUtil.addProblemDescriptors(holder.getResults(), false, GlobalInspectionContextImpl.this, null,
+                                                       CONVERT, toolPresentation);
           return true;
         }
       });
@@ -406,7 +406,7 @@ public class GlobalInspectionContextImpl extends GlobalInspectionContextBase imp
       throw e;
     }
     catch (Throwable e) {
-      LOG.error("In file: " + file, e);
+      LOG.error("In file: " + file.getName(), e);
     }
     finally {
       InjectedLanguageManager.getInstance(getProject()).dropFileCaches(file);
@@ -559,11 +559,18 @@ public class GlobalInspectionContextImpl extends GlobalInspectionContextBase imp
       if (localTool instanceof PairedUnfairLocalInspectionTool) {
         String batchShortName = ((PairedUnfairLocalInspectionTool)localTool).getInspectionForBatchShortName();
         InspectionProfile currentProfile = getCurrentProfile();
-        InspectionToolWrapper batchInspection = currentProfile == null ? null : currentProfile.getInspectionTool(batchShortName, getProject());
+        InspectionToolWrapper batchInspection;
+        if (currentProfile == null) {
+          batchInspection = null;
+        }
+        else {
+          final InspectionToolWrapper pairedWrapper = currentProfile.getInspectionTool(batchShortName, getProject());
+          batchInspection = pairedWrapper != null ? pairedWrapper.createCopy() : null;
+        }
         if (batchInspection != null && !myTools.containsKey(batchShortName)) {
           // add to existing inspections to run
           InspectionProfileEntry batchTool = batchInspection.getTool();
-          Tools newTool = new ToolsImpl(batchInspection, batchInspection.getDefaultLevel(), true);
+          Tools newTool = new ToolsImpl(batchInspection, batchInspection.getDefaultLevel(), true, true);
           if (batchTool instanceof LocalInspectionTool) localTools.add(newTool);
           else if (batchTool instanceof GlobalSimpleInspectionTool) globalSimpleTools.add(newTool);
           else if (batchTool instanceof GlobalInspectionTool) globalTools.add(newTool);
@@ -575,10 +582,10 @@ public class GlobalInspectionContextImpl extends GlobalInspectionContextBase imp
     }
   }
 
-  private static List<LocalInspectionToolWrapper> getWrappersFromTools(List<Tools> localTools, PsiFile file) {
-    final List<LocalInspectionToolWrapper> lTools = new ArrayList<LocalInspectionToolWrapper>();
+  private static <T extends InspectionToolWrapper> List<T> getWrappersFromTools(List<Tools> localTools, PsiFile file) {
+    final List<T> lTools = new ArrayList<T>();
     for (Tools tool : localTools) {
-      final LocalInspectionToolWrapper enabledTool = (LocalInspectionToolWrapper)tool.getEnabledTool(file);
+      final T enabledTool = (T)tool.getEnabledTool(file);
       if (enabledTool != null) {
         lTools.add(enabledTool);
       }
