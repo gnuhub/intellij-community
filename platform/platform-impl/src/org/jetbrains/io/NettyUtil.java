@@ -16,11 +16,14 @@
 package org.jetbrains.io;
 
 import com.intellij.openapi.diagnostic.Logger;
+import com.intellij.openapi.util.Condition;
+import com.intellij.openapi.util.Conditions;
 import com.intellij.util.SystemProperties;
 import io.netty.bootstrap.Bootstrap;
 import io.netty.bootstrap.BootstrapUtil;
 import io.netty.bootstrap.ServerBootstrap;
 import io.netty.channel.*;
+import io.netty.channel.epoll.EpollServerSocketChannel;
 import io.netty.channel.nio.NioEventLoopGroup;
 import io.netty.channel.oio.OioEventLoopGroup;
 import io.netty.channel.socket.nio.NioServerSocketChannel;
@@ -94,8 +97,13 @@ public final class NettyUtil {
 
   @Nullable
   public static Channel connect(@NotNull Bootstrap bootstrap, @NotNull InetSocketAddress remoteAddress, @Nullable AsyncPromise<?> promise, int maxAttemptCount) {
+    return connect(bootstrap, remoteAddress, promise, maxAttemptCount, null);
+  }
+
+  @Nullable
+  public static Channel connect(@NotNull Bootstrap bootstrap, @NotNull InetSocketAddress remoteAddress, @Nullable AsyncPromise<?> promise, int maxAttemptCount, @Nullable Condition<Void> stopCondition) {
     try {
-      return doConnect(bootstrap, remoteAddress, promise, maxAttemptCount);
+      return doConnect(bootstrap, remoteAddress, promise, maxAttemptCount, stopCondition == null ? Conditions.<Void>alwaysFalse() : stopCondition);
     }
     catch (Throwable e) {
       if (promise != null) {
@@ -106,7 +114,11 @@ public final class NettyUtil {
   }
 
   @Nullable
-  private static Channel doConnect(@NotNull Bootstrap bootstrap, @NotNull InetSocketAddress remoteAddress, @Nullable AsyncPromise<?> promise, int maxAttemptCount) throws Throwable {
+  private static Channel doConnect(@NotNull Bootstrap bootstrap,
+                                   @NotNull InetSocketAddress remoteAddress,
+                                   @Nullable AsyncPromise<?> promise,
+                                   int maxAttemptCount,
+                                   @NotNull Condition<Void> stopCondition) throws Throwable {
     int attemptCount = 0;
 
     if (bootstrap.group() instanceof NioEventLoopGroup) {
@@ -114,6 +126,9 @@ public final class NettyUtil {
         ChannelFuture future = bootstrap.connect(remoteAddress).awaitUninterruptibly();
         if (future.isSuccess()) {
           return future.channel();
+        }
+        else if (stopCondition.value(null) || (promise != null && promise.getState() == Promise.State.REJECTED)) {
+          return null;
         }
         else if (maxAttemptCount == -1) {
           //noinspection BusyWait
@@ -144,7 +159,10 @@ public final class NettyUtil {
         break;
       }
       catch (IOException e) {
-        if (maxAttemptCount == -1) {
+        if (stopCondition.value(null) || (promise != null && promise.getState() == Promise.State.REJECTED)) {
+          return null;
+        }
+        else if (maxAttemptCount == -1) {
           //noinspection BusyWait
           Thread.sleep(300);
           attemptCount++;
@@ -190,12 +208,14 @@ public final class NettyUtil {
     }
   }
 
+  @NotNull
   public static ServerBootstrap nioServerBootstrap(@NotNull EventLoopGroup eventLoopGroup) {
-    ServerBootstrap bootstrap = new ServerBootstrap().group(eventLoopGroup).channel(NioServerSocketChannel.class);
+    ServerBootstrap bootstrap = new ServerBootstrap().group(eventLoopGroup).channel(eventLoopGroup instanceof NioEventLoopGroup ? NioServerSocketChannel.class : EpollServerSocketChannel.class);
     bootstrap.childOption(ChannelOption.TCP_NODELAY, true).childOption(ChannelOption.SO_KEEPALIVE, true);
     return bootstrap;
   }
 
+  @NotNull
   public static Bootstrap oioClientBootstrap() {
     Bootstrap bootstrap = new Bootstrap().group(new OioEventLoopGroup(1, PooledThreadExecutor.INSTANCE)).channel(OioSocketChannel.class);
     bootstrap.option(ChannelOption.TCP_NODELAY, true).option(ChannelOption.SO_KEEPALIVE, true);

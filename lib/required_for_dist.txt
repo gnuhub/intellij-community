@@ -16,7 +16,7 @@ freemarker.jar
 httpmime-4.3.6.jar
 ecj-4.4.jar
 groovy-all-2.3.9.jar
-gson-2.3.jar
+gson-2.3.1.jar
 guava-17.0.jar
 hamcrest-core-1.3.jar
 hamcrest-library-1.3.jar
@@ -39,7 +39,7 @@ jsch.agentproxy.usocket-jna.jar
 jsch.agentproxy.usocket-nc.jar
 jsr166e.jar
 jsr173_1.0_api.jar
-junit-4.11.jar
+junit-4.12.jar
 junit.jar
 jzlib-1.1.1.jar
 log4j.jar

@@ -103,8 +103,7 @@ public final class EditorTabbedContainer implements Disposable, CloseAction.Clos
       @Override
       @NotNull
       public UiDecoration getDecoration() {
-        int sideInset = !UISettings.getInstance().HIDE_TABS_IF_NEED ? 2 : 10;
-        return new UiDecoration(null, new Insets(TabsUtil.TAB_VERTICAL_PADDING, sideInset, TabsUtil.TAB_VERTICAL_PADDING, sideInset));
+        return new UiDecoration(null, new Insets(TabsUtil.TAB_VERTICAL_PADDING, 10, TabsUtil.TAB_VERTICAL_PADDING, 10));
       }
     }).setTabLabelActionsMouseDeadzone(TimedDeadzone.NULL).setGhostsAlwaysVisible(true).setTabLabelActionsAutoHide(false)
       .setActiveTabFillIn(EditorColorsManager.getInstance().getGlobalScheme().getDefaultBackground()).setPaintFocus(false).getJBTabs()
@@ -756,7 +755,7 @@ public final class EditorTabbedContainer implements Disposable, CloseAction.Clos
       Rectangle bounds = new Rectangle(x, y, w, h);
       g.setColor(UIUtil.CONTRAST_BORDER_COLOR);
       drawLine(bounds, selectedBounds, g, 0);
-      if (UIUtil.isUnderDarcula()) {
+      if (UIUtil.isUnderDarcula() || true) { //remove shadow for all for awhile
         return;
       }
       g.setColor(ColorUtil.withAlpha(UIUtil.CONTRAST_BORDER_COLOR, .5));

@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2014 JetBrains s.r.o.
+ * Copyright 2000-2015 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,7 +16,6 @@
 package com.intellij.ui.tabs.impl;
 
 import com.intellij.ui.ColorUtil;
-import com.intellij.ui.JBColor;
 import com.intellij.util.ui.UIUtil;
 
 import java.awt.*;
@@ -54,7 +53,7 @@ public class DefaultEditorTabsPainter extends JBEditorTabsPainter {
   public void fillSelectionAndBorder(Graphics2D g, JBTabsImpl.ShapeInfo selectedShape, Color tabColor, int x, int y, int height) {
     g.setColor(tabColor != null ? tabColor : getDefaultTabColor());
     g.fill(selectedShape.fillPath.getShape());
-    g.draw(selectedShape.fillPath.getShape());
+    //g.draw(selectedShape.fillPath.getShape());
   }
 
   @Override
@@ -63,16 +62,13 @@ public class DefaultEditorTabsPainter extends JBEditorTabsPainter {
   }
 
   protected Color getDefaultTabColor() {
+    if (myDefaultTabColor != null) {
+      return myDefaultTabColor;
+    }
     return Color.WHITE;
   }
 
   protected Color getInactiveMaskColor() {
     return ColorUtil.withAlpha(new Color(0x262626), .2);
-  }
-
-
-  @Override
-  public Color getEmptySpaceColor() {
-    return new JBColor(new Color(0xbfbfbf), UIUtil.getPanelBackground());
   }
 }
