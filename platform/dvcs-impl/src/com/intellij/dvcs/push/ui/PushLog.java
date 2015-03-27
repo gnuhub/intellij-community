@@ -261,11 +261,7 @@ public class PushLog extends JPanel implements DataProvider {
       @Override
       public void linkSelected(LinkLabel aSource, String aLinkData) {
         if (linkLabel.isEnabled()) {
-          mySyncStrategy = true;
-          DefaultMutableTreeNode nodeToEdit = getFirstNodeToEdit();
-          if (nodeToEdit != null) {
-            myTree.startEditingAtPath(TreeUtil.getPathFromRoot(nodeToEdit));
-          }
+          startSyncEditing();
         }
       }
     }, null);
@@ -282,6 +278,13 @@ public class PushLog extends JPanel implements DataProvider {
     return labelPanel;
   }
 
+  private void startSyncEditing() {
+    mySyncStrategy = true;
+    DefaultMutableTreeNode nodeToEdit = getFirstNodeToEdit();
+    if (nodeToEdit != null) {
+      myTree.startEditingAtPath(TreeUtil.getPathFromRoot(nodeToEdit));
+    }
+  }
 
   @NotNull
   private static List<Change> collectAllChanges(@NotNull List<CommitNode> commitNodes) {
@@ -418,11 +421,7 @@ public class PushLog extends JPanel implements DataProvider {
       return true;
     }
     if (myAllowSyncStrategy && e.getKeyCode() == KeyEvent.VK_F2 && e.getModifiers() == InputEvent.ALT_MASK && pressed) {
-      mySyncStrategy = true;
-      DefaultMutableTreeNode node = getFirstNodeToEdit();
-      if (node != null) {
-        myTree.startEditingAtPath(TreeUtil.getPathFromRoot(node));
-      }
+      startSyncEditing();
       return true;
     }
     return super.processKeyBinding(ks, e, condition, pressed);
@@ -514,6 +513,14 @@ public class PushLog extends JPanel implements DataProvider {
 
   public void fireEditorUpdated(@NotNull String currentText) {
     if (mySyncStrategy) {
+      //update ui model
+      List<RepositoryNode> repositoryNodes =
+        getChildNodesByType((DefaultMutableTreeNode)myTree.getModel().getRoot(), RepositoryNode.class, false);
+      for (RepositoryNode node : repositoryNodes) {
+        if (node.isEditableNow()) {
+          node.forceUpdateUiModelWithTypedText(currentText);
+        }
+      }
       setSyncText(currentText);
       myTree.repaint();
     }

@@ -102,10 +102,14 @@ public class PyStudyDirectoryProjectGenerator extends PythonProjectGenerator imp
   }
 
   public List<CourseInfo> getCourses() {
-    return myGenerator.getCourses();
+    return myGenerator.getCourses(false);
   }
 
   public void setSelectedCourse(CourseInfo course) {
     myGenerator.setSelectedCourse(course);
+  }
+
+  public StudyProjectGenerator getGenerator() {
+    return myGenerator;
   }
 }

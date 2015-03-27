@@ -156,7 +156,7 @@ public class PyMoveTest extends PyTestCase {
     doMoveFileTest("p1/p2/m1.py", "nonp3");
   }
 
-  // PY-6432
+  // PY-6432, PY-15347
   public void testStarImportWithUsages() {
     doMoveSymbolTest("f", "c.py");
   }
@@ -319,7 +319,22 @@ public class PyMoveTest extends PyTestCase {
     doMoveSymbolsTest("b.py", "f", "A");
   }
 
-  private void doMoveFileTest(String fileName, String toDirName)  {
+  // PY-15343
+  public void testDunderAll() {
+    doMoveSymbolTest("func", "b.py");
+  }
+
+  // PY-15343
+  public void testDunderAllSingleElementTuple() {
+    doMoveSymbolTest("func", "b.py");
+  }
+
+  // PY-15343
+  public void testDunderAllTwoElementsTuple() {
+    doMoveSymbolTest("func", "b.py");
+  }
+
+  private void doMoveFileTest(String fileName, String toDirName) {
     Project project = myFixture.getProject();
     PsiManager manager = PsiManager.getInstance(project);
 
@@ -340,7 +355,7 @@ public class PyMoveTest extends PyTestCase {
     VirtualFile toVirtualDir = dir1.findFileByRelativePath(toDirName);
     assertNotNull(toVirtualDir);
     PsiDirectory toDir = manager.findDirectory(toVirtualDir);
-    new MoveFilesOrDirectoriesProcessor(project, new PsiElement[] {file}, toDir, false, false, null, null).run();
+    new MoveFilesOrDirectoriesProcessor(project, new PsiElement[]{file}, toDir, false, false, null, null).run();
 
     VirtualFile dir2 = getVirtualFileByName(PythonTestUtil.getTestDataPath() + rootAfter);
     try {

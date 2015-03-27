@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2014 JetBrains s.r.o.
+ * Copyright 2000-2015 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -106,7 +106,6 @@ class FindInProjectTask {
     final String filter = findModel.getFileFilter();
     final Pattern pattern = FindInProjectUtil.createFileMaskRegExp(filter);
 
-    //noinspection unchecked
     myFileMask = pattern == null ? Conditions.<VirtualFile>alwaysTrue() : new Condition<VirtualFile>() {
       @Override
       public boolean value(VirtualFile file) {
@@ -390,6 +389,7 @@ class FindInProjectTask {
       PsiFile file = element.getContainingFile();
       if (file != null) {
         ContainerUtil.addIfNotNull(files, file.getVirtualFile());
+        ContainerUtil.addIfNotNull(files, file.getNavigationElement().getContainingFile().getVirtualFile());
       }
     }
     return files;
@@ -432,7 +432,7 @@ class FindInProjectTask {
       return Collections.emptySet();
     }
 
-    GlobalSearchScope scope = toGlobal(FindInProjectUtil.getScopeFromModel(myProject, myFindModel));
+    final GlobalSearchScope scope = toGlobal(FindInProjectUtil.getScopeFromModel(myProject, myFindModel));
 
     final Set<VirtualFile> resultFiles = new LinkedHashSet<VirtualFile>();
 
@@ -448,12 +448,10 @@ class FindInProjectTask {
 
       if (!keys.isEmpty()) {
         final List<VirtualFile> hits = new ArrayList<VirtualFile>();
-        final GlobalSearchScope finalScope = scope;
         ApplicationManager.getApplication().runReadAction(new Runnable() {
           @Override
           public void run() {
-            FileBasedIndex.getInstance().getFilesWithKey(TrigramIndex.INDEX_ID, keys, new CommonProcessors.CollectProcessor<VirtualFile>(hits),
-                                                         finalScope);
+            FileBasedIndex.getInstance().getFilesWithKey(TrigramIndex.INDEX_ID, keys, new CommonProcessors.CollectProcessor<VirtualFile>(hits), scope);
           }
         });
 

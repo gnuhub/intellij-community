@@ -185,7 +185,6 @@ public abstract class ComponentStoreImpl implements IComponentStore.Reloadable {
         errors = executeSave(session, readonlyFiles, errors);
       }
     }
-
     return errors;
   }
 
@@ -299,8 +298,7 @@ public abstract class ComponentStoreImpl implements IComponentStore.Reloadable {
     }
 
     Class<T> stateClass = ComponentSerializationUtil.getStateClass(component.getClass());
-    // todo remove assert before last EAP
-    if (!stateSpec.defaultStateAsResource() && getDefaultState(component, name, stateClass) != null) {
+    if (LOG.isDebugEnabled()) {
       LOG.error(name + " has default state, but not marked to load it");
     }
 

@@ -51,8 +51,8 @@ public class CCNewProjectPanel {
   }
 
   @NotNull
-  public String getAuthor() {
-    return StringUtil.notNullize(myAuthorField.getText());
+  public String[] getAuthors() {
+    return StringUtil.splitByLines(StringUtil.notNullize(myAuthorField.getText()));
   }
 
   public void registerValidators(FacetValidatorsManager manager) {
@@ -67,5 +67,17 @@ public class CCNewProjectPanel {
         myValidationManager.validate();
       }
     }
+  }
+
+  public JTextField getAuthorField() {
+    return myAuthorField;
+  }
+
+  public JTextArea getDescriptionField() {
+    return myDescription;
+  }
+
+  public JTextField getNameField() {
+    return myName;
   }
 }

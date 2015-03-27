@@ -60,7 +60,7 @@ class ForkedGroovyc implements GroovycFlavor {
     throws Exception {
     List<String> classpath = new ArrayList<String>();
     if (myOptimizeClassLoading) {
-      classpath.add(GroovyBuilder.getGroovyRtRoot().getPath());
+      classpath.addAll(GroovyBuilder.getGroovyRtRoots());
       classpath.add(ClasspathBootstrap.getResourcePath(Function.class));
       classpath.add(ClasspathBootstrap.getResourcePath(UrlClassLoader.class));
       classpath.add(ClasspathBootstrap.getResourceFile(THashMap.class).getPath());
@@ -69,7 +69,7 @@ class ForkedGroovyc implements GroovycFlavor {
     }
 
     List<String> vmParams = ContainerUtilRt.newArrayList();
-    vmParams.add("-Xmx" + settings.heapSize + "m");
+    vmParams.add("-Xmx" + System.getProperty("groovyc.heap.size", settings.heapSize) + "m");
     vmParams.add("-Dfile.encoding=" + System.getProperty("file.encoding"));
     //vmParams.add("-Xrunjdwp:transport=dt_socket,server=y,suspend=y,address=5239");
     

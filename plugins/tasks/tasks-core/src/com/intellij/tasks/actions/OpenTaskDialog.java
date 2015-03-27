@@ -131,7 +131,7 @@ public class OpenTaskDialog extends DialogWrapper {
       }
       else {
         for (VcsTaskHandler handler : handlers) {
-          VcsTaskHandler.TaskInfo[] tasks = handler.getCurrentTasks();
+          VcsTaskHandler.TaskInfo[] tasks = handler.getAllExistingTasks();
           if (tasks.length > 0) {
             myVcsTaskHandler = handler;
             //noinspection unchecked
@@ -178,10 +178,8 @@ public class OpenTaskDialog extends DialogWrapper {
       myChangelistName.setText(taskManager.getChangelistName(task));
     }
     updateFields(true);
-    final JComponent preferredFocusedComponent = getPreferredFocusedComponent();
-    if (preferredFocusedComponent != null) {
-      myTaskStateCombo.registerUpDownAction(preferredFocusedComponent);
-    }
+    myTaskStateCombo.registerUpDownAction(myBranchName);
+    myTaskStateCombo.registerUpDownAction(myChangelistName);
     if (myUpdateState.isSelected()) {
       myTaskStateCombo.scheduleUpdateOnce();
     }

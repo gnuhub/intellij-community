@@ -39,11 +39,13 @@ import com.intellij.openapi.editor.highlighter.EditorHighlighter;
 import com.intellij.openapi.editor.highlighter.HighlighterIterator;
 import com.intellij.openapi.editor.impl.EditorImpl;
 import com.intellij.openapi.project.Project;
+import com.intellij.openapi.util.Comparing;
 import com.intellij.openapi.util.Key;
 import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.psi.PsiDocumentManager;
 import com.intellij.psi.PsiFile;
 import com.intellij.psi.codeStyle.CodeStyleSettingsManager;
+import com.intellij.psi.tree.IElementType;
 import com.intellij.util.EditorPopupHandler;
 import org.jetbrains.annotations.NotNull;
 
@@ -252,11 +254,20 @@ public class EditorActionUtil {
     return isWordEnd(chars, offset, isCamel) || !isWordStart(chars, offset, isCamel) && isLexemeBoundary(editor, offset);
   }
 
+  /**
+   * Finds out whether there's a boundary between two lexemes of different type at given offset.
+   */
   public static boolean isLexemeBoundary(@NotNull Editor editor, int offset) {
     if (!(editor instanceof EditorEx) || offset <= 0 || offset >= editor.getDocument().getTextLength()) return false;
     EditorHighlighter highlighter = ((EditorEx)editor).getHighlighter();
     HighlighterIterator it = highlighter.createIterator(offset);
-    return it.getStart() == offset;
+    if (it.getStart() != offset) {
+      return false;
+    }
+    IElementType rightToken = it.getTokenType();
+    it.retreat();
+    IElementType leftToken = it.getTokenType();
+    return !Comparing.equal(leftToken, rightToken);
   }
 
   public static boolean isWordStart(@NotNull CharSequence text, int offset, boolean isCamel) {
@@ -542,6 +553,18 @@ public class EditorActionUtil {
   }
 
   public static void moveCaretToLineEnd(@NotNull Editor editor, boolean isWithSelection) {
+    moveCaretToLineEnd(editor, isWithSelection, true);
+  }
+
+  /**
+   * Moves caret to visual line end.
+   * 
+   * @param editor target editor
+   * @param isWithSelection whether selection should be set from original caret position to its target position
+   * @param ignoreTrailingWhitespace if <code>true</code>, line end will be determined while ignoring trailing whitespace, unless caret is
+   *                                 already at so-determined target position, in which case trailing whitespace will be taken into account
+   */
+  public static void moveCaretToLineEnd(@NotNull Editor editor, boolean isWithSelection, boolean ignoreTrailingWhitespace) {
     Document document = editor.getDocument();
     SelectionModel selectionModel = editor.getSelectionModel();
     int selectionStart = selectionModel.getLeadSelectionOffset();
@@ -604,7 +627,7 @@ public class EditorActionUtil {
 
     // Move to the calculated end of visual line if caret is located on a last non-white space symbols on a line and there are
     // remaining white space symbols.
-    if (newOffset == offset || newOffset == caretModel.getOffset()) {
+    if (newOffset == offset || newOffset == caretModel.getOffset() || !ignoreTrailingWhitespace) {
       caretModel.moveToVisualPosition(visualEndOfLineWithCaret);
     }
     else {

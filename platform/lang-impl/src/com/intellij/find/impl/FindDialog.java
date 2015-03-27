@@ -582,7 +582,7 @@ public class FindDialog extends DialogWrapper {
   }
 
   private boolean haveResultsPreview() {
-    return ApplicationManager.getApplication().isInternal() && Registry.is("ide.find.show.preview") && myModel.isMultipleFiles();
+    return Registry.is("ide.find.show.preview") && myModel.isMultipleFiles();
   }
 
   private JPanel createResultsOptionPanel(JPanel optionsPanel, GridBagConstraints gbConstraints) {
@@ -649,7 +649,7 @@ public class FindDialog extends DialogWrapper {
 
   private void doOKAction(boolean findAll) {
     if (DumbService.isDumb(myProject)) {
-      Messages.showMessageDialog(myProject, "Find Usages is not available while indexing is in progress", "Indexing", null);
+      Messages.showMessageDialog(myProject, "Find in Path is not available while indexing is in progress", "Indexing", null);
       return;
     }
 
