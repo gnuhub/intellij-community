@@ -15,7 +15,6 @@
  */
 package com.jetbrains.python.psi.impl;
 
-import com.intellij.extapi.psi.ASTDelegatePsiElement;
 import com.intellij.lang.ASTNode;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.util.text.StringUtil;
@@ -24,7 +23,6 @@ import com.intellij.psi.stubs.StubElement;
 import com.intellij.psi.tree.IElementType;
 import com.intellij.psi.util.PsiTreeUtil;
 import com.intellij.psi.util.QualifiedName;
-import com.intellij.util.ArrayUtil;
 import com.intellij.util.containers.ContainerUtil;
 import com.jetbrains.python.PyTokenTypes;
 import com.jetbrains.python.psi.*;
@@ -40,6 +38,7 @@ import java.util.List;
  * @author max
  */
 public class PyPsiUtils {
+
   private static final Logger LOG = Logger.getInstance(PyPsiUtils.class.getName());
 
   private PyPsiUtils() {
@@ -55,26 +54,42 @@ public class PyPsiUtils {
     return psiElements;
   }
 
+  /**
+   * Finds the closest comma after the element skipping any whitespaces in-between.
+   * @param element
+   */
   @Nullable
-  protected static ASTNode getPrevComma(ASTNode after) {
-    ASTNode node = after;
-    PyElementType comma = PyTokenTypes.COMMA;
-    do {
-      node = node.getTreePrev();
-    }
-    while (node != null && !node.getElementType().equals(comma));
-    return node;
+  public static PsiElement getPrevComma(@NotNull PsiElement element) {
+    final PsiElement prevNode = getPrevNonWhitespaceSibling(element);
+    return prevNode != null && prevNode.getNode().getElementType() == PyTokenTypes.COMMA ? prevNode : null;
   }
 
   @Nullable
-  public static ASTNode getNextComma(ASTNode after) {
-    ASTNode node = after;
-    PyElementType comma = PyTokenTypes.COMMA;
-    do {
-      node = node.getTreeNext();
-    }
-    while (node != null && !node.getElementType().equals(comma));
-    return node;
+  public static PsiElement getPrevNonWhitespaceSibling(@NotNull PsiElement element) {
+    return PsiTreeUtil.skipSiblingsBackward(element, PsiWhiteSpace.class);
+  }
+
+  /**
+   * Finds the closest comma before the element skipping any whitespaces in-between.
+   */
+  @Nullable
+  public static PsiElement getNextComma(@NotNull PsiElement element) {
+    final PsiElement nextNode = getNextNonWhitespaceSibling(element);
+    return nextNode != null && nextNode.getNode().getElementType() == PyTokenTypes.COMMA ? nextNode : null;
+  }
+
+  @Nullable
+  public static PsiElement getNextNonWhitespaceSibling(@NotNull PsiElement element) {
+    return PsiTreeUtil.skipSiblingsForward(element, PsiWhiteSpace.class);
+  }
+
+  /**
+   * Finds the closest comma looking for the next comma first and then for the preceding one.
+   */
+  @Nullable
+  public static PsiElement getAdjacentComma(@NotNull PsiElement element) {
+    final PsiElement nextComma = getNextComma(element);
+    return nextComma != null ? nextComma : getPrevComma(element);
   }
 
   public static void addBeforeInParent(@NotNull final PsiElement anchor, @NotNull final PsiElement... newElements) {
@@ -204,35 +219,22 @@ public class PyPsiUtils {
     }
   }
 
-  static void deleteAdjacentComma(ASTDelegatePsiElement pyImportStatement, ASTNode child, final PyElement[] elements) {
-    if (ArrayUtil.contains(child.getPsi(), elements)) {
-      ASTNode next = getNextComma(child);
-      if (next == null) {
-        next = getPrevComma(child);
-      }
-      if (next != null) {
-        final ASTNode prev = next.getTreePrev();
-        pyImportStatement.deleteChildInternal(next);
-        removeSlash(pyImportStatement, prev);
-      }
-    }
-  }
-
-  private static void removeSlash(final ASTDelegatePsiElement statement, ASTNode prev) {
-    final List<ASTNode> toDelete = new ArrayList<ASTNode>();
-
-    while (prev instanceof PsiWhiteSpace) {
-      toDelete.add(0, prev);
-      prev = prev.getTreePrev();
-    }
-    prev = prev.getTreeNext();
-
-    while (prev instanceof PsiWhiteSpace) {
-      toDelete.add(prev);
-      prev = prev.getTreeNext();
-    }
-    if (toDelete.size() > 0) {
-      statement.deleteChildRange(toDelete.get(0).getPsi(), toDelete.get(toDelete.size() - 1).getPsi());
+  /**
+   * Removes comma closest to the given child node along with any whitespaces around. First following comma is checked and only
+   * then, if it doesn't exists, preceding one.
+   *
+   * @param element parent node
+   * @param child   child node comma should be adjacent to
+   * @see #getAdjacentComma(PsiElement)
+   */
+  public static void deleteAdjacentCommaWithWhitespaces(@NotNull PsiElement element, @NotNull PsiElement child) {
+    final PsiElement commaNode = getAdjacentComma(child);
+    if (commaNode != null) {
+      final PsiElement nextNonWhitespace = getNextNonWhitespaceSibling(commaNode);
+      final PsiElement last = nextNonWhitespace == null ? element.getLastChild() : nextNonWhitespace.getPrevSibling();
+      final PsiElement prevNonWhitespace = getPrevNonWhitespaceSibling(commaNode);
+      final PsiElement first = prevNonWhitespace == null ? element.getLastChild() : prevNonWhitespace.getNextSibling();
+      element.deleteChildRange(first, last);
     }
   }
 

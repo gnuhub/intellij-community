@@ -334,6 +334,26 @@ public class PyMoveTest extends PyTestCase {
     doMoveSymbolTest("func", "b.py");
   }
 
+  // PY-15342
+  public void testGlobalStatementWithSingleName() {
+    doMoveSymbolTest("VAR", "b.py");
+  }
+
+  // PY-15342
+  public void testGlobalStatementWithTwoNames() {
+    doMoveSymbolTest("VAR", "b.py");
+  }
+
+  // PY-15342
+  public void testGlobalStatementOnly() {
+    doMoveSymbolTest("VAR", "b.py");
+  }
+
+  // PY-15350
+  public void testMoveSymbolFromStatementList() {
+    doMoveSymbolsTest("b.py", "func", "C");
+  }
+
   private void doMoveFileTest(String fileName, String toDirName) {
     Project project = myFixture.getProject();
     PsiManager manager = PsiManager.getInstance(project);
@@ -377,7 +397,7 @@ public class PyMoveTest extends PyTestCase {
       @Override
       public PsiNamedElement fun(String name) {
         final PsiNamedElement found = findFirstNamedElement(name);
-        assertNotNull(found);
+        assertNotNull("Symbol '" + name + "' does not exist", found);
         return found;
       }
     });
