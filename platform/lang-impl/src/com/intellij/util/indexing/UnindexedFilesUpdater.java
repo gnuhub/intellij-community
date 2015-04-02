@@ -31,7 +31,6 @@ import com.intellij.openapi.roots.CollectingContentIterator;
 import com.intellij.openapi.roots.ModuleRootAdapter;
 import com.intellij.openapi.roots.ModuleRootEvent;
 import com.intellij.openapi.roots.impl.PushedFilePropertiesUpdater;
-import com.intellij.openapi.roots.impl.PushedFilePropertiesUpdaterImpl;
 import com.intellij.openapi.startup.StartupManager;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.util.Consumer;
@@ -63,12 +62,7 @@ public class UnindexedFilesUpdater extends DumbModeTask {
 
   private void updateUnindexedFiles(ProgressIndicator indicator) {
     long started = System.currentTimeMillis();
-    PushedFilePropertiesUpdaterImpl.ourConcurrentlyFlag.set(Boolean.TRUE);
-    try {
-      PushedFilePropertiesUpdater.getInstance(myProject).pushAllPropertiesNow();
-    } finally {
-      PushedFilePropertiesUpdaterImpl.ourConcurrentlyFlag.set(null);
-    }
+    PushedFilePropertiesUpdater.getInstance(myProject).pushAllPropertiesNow();
 
     LOG.info("Pushed properties in " + (System.currentTimeMillis() - started) + " ms");
 
@@ -77,12 +71,7 @@ public class UnindexedFilesUpdater extends DumbModeTask {
 
     CollectingContentIterator finder = myIndex.createContentIterator(indicator);
     long l = System.currentTimeMillis();
-    FileBasedIndexImpl.ourConcurrentlyFlag.set(Boolean.TRUE);
-    try {
-      myIndex.iterateIndexableFiles(finder, myProject, indicator);
-    } finally {
-      FileBasedIndexImpl.ourConcurrentlyFlag.set(null);
-    }
+    myIndex.iterateIndexableFilesConcurrently(finder, myProject, indicator);
 
     myIndex.filesUpdateEnumerationFinished();
 
