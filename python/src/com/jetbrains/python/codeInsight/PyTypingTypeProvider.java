@@ -64,7 +64,7 @@ public class PyTypingTypeProvider extends PyTypeProviderBase {
       // XXX: Requires switching from stub to AST
       final PyExpression value = annotation.getValue();
       if (value != null) {
-        final PyType type = getTypingType(value, context);
+        final PyType type = getType(value, context);
         if (type != null) {
           final PyType optionalType = getOptionalTypeFromDefaultNone(param, type, context);
           return Ref.create(optionalType != null ? optionalType : type);
@@ -84,7 +84,7 @@ public class PyTypingTypeProvider extends PyTypeProviderBase {
         // XXX: Requires switching from stub to AST
         final PyExpression value = annotation.getValue();
         if (value != null) {
-          final PyType type = getTypingType(value, context);
+          final PyType type = getType(value, context);
           return type != null ? Ref.create(type) : null;
         }
       }
@@ -104,7 +104,7 @@ public class PyTypingTypeProvider extends PyTypeProviderBase {
       final PyExpression[] args = callExpr.getArguments();
       if (args.length > 0) {
         final PyExpression typeExpr = args[0];
-        return getTypingType(typeExpr, context);
+        return getType(typeExpr, context);
       }
     }
     return null;
@@ -113,9 +113,17 @@ public class PyTypingTypeProvider extends PyTypeProviderBase {
   @Override
   public PyType getReferenceType(@NotNull PsiElement referenceTarget, TypeEvalContext context, @Nullable PsiElement anchor) {
     if (referenceTarget instanceof PyTargetExpression && context.maySwitchToAST(referenceTarget)) {
-      final String comment = getTypeComment((PyTargetExpression)referenceTarget);
+      final PyTargetExpression target = (PyTargetExpression)referenceTarget;
+      final String comment = getTypeComment(target);
       if (comment != null) {
-        return getStringBasedType(comment, referenceTarget, context);
+        final PyType type = getStringBasedType(comment, referenceTarget, context);
+        if (type instanceof PyTupleType) {
+          final PyTupleExpression tupleExpr = PsiTreeUtil.getParentOfType(target, PyTupleExpression.class);
+          if (tupleExpr != null) {
+            return PyTypeChecker.getTargetTypeFromTupleAssignment(target, tupleExpr, (PyTupleType)type);
+          }
+        }
+        return type;
       }
     }
     return null;
@@ -123,11 +131,12 @@ public class PyTypingTypeProvider extends PyTypeProviderBase {
 
   @Nullable
   private static String getTypeComment(@NotNull PyTargetExpression target) {
-    final PyAssignmentStatement assignment = PsiTreeUtil.getParentOfType(target, PyAssignmentStatement.class);
-    if (assignment != null) {
-      final PsiElement lastChild = assignment.getLastChild();
-      if (lastChild instanceof PsiComment) {
-        final String text = lastChild.getText();
+    final PsiElement commentContainer = PsiTreeUtil.getParentOfType(target, PyAssignmentStatement.class, PyWithStatement.class,
+                                                                    PyForPart.class);
+    if (commentContainer != null) {
+      final PsiComment comment = getSameLineTrailingCommentChild(commentContainer);
+      if (comment != null) {
+        final String text = comment.getText();
         final Matcher m = TYPE_COMMENT_PATTERN.matcher(text);
         if (m.matches()) {
           return m.group(1);
@@ -135,6 +144,23 @@ public class PyTypingTypeProvider extends PyTypeProviderBase {
       }
     }
     return null;
+  }
+
+  @Nullable
+  private static PsiComment getSameLineTrailingCommentChild(@NotNull PsiElement element) {
+    PsiElement child = element.getFirstChild();
+    while (true) {
+      if (child == null) {
+        return null;
+      }
+      if (child instanceof PsiComment) {
+        return (PsiComment)child;
+      }
+      if (child.getText().contains("\n")) {
+        return null;
+      }
+      child = child.getNextSibling();
+    }
   }
 
   private static boolean isAny(@NotNull PyType type) {
@@ -210,7 +236,7 @@ public class PyTypingTypeProvider extends PyTypeProviderBase {
   }
 
   @Nullable
-  private static PyType getTypingType(@NotNull PyExpression expression, @NotNull TypeEvalContext context) {
+  private static PyType getType(@NotNull PyExpression expression, @NotNull TypeEvalContext context) {
     final PyType unionType = getUnionType(expression, context);
     if (unionType != null) {
       return unionType;
@@ -302,8 +328,16 @@ public class PyTypingTypeProvider extends PyTypeProviderBase {
     codeFragment.setContext(anchor.getContainingFile());
     final PsiElement element = codeFragment.getFirstChild();
     if (element instanceof PyExpressionStatement) {
-      final PyExpression dummyExpr = ((PyExpressionStatement)element).getExpression();
-      return getType(dummyExpr, context);
+      final PyExpression expr = ((PyExpressionStatement)element).getExpression();
+      if (expr instanceof PyTupleExpression) {
+        final PyTupleExpression tupleExpr = (PyTupleExpression)expr;
+        final List<PyType> elementTypes = new ArrayList<PyType>();
+        for (PyExpression elementExpr : tupleExpr.getElements()) {
+          elementTypes.add(getType(elementExpr, context));
+        }
+        return PyTupleType.create(anchor, elementTypes.toArray(new PyType[elementTypes.size()]));
+      }
+      return getType(expr, context);
     }
     return null;
   }
@@ -434,26 +468,6 @@ public class PyTypingTypeProvider extends PyTypeProviderBase {
     final String collectionName = resolveToQualifiedName(expression, context);
     final String builtinName = BUILTIN_COLLECTIONS.get(collectionName);
     return builtinName != null ? PyTypeParser.getTypeByName(expression, builtinName) : null;
-  }
-
-  @Nullable
-  private static PyType getType(@NotNull PyExpression expression, @NotNull TypeEvalContext context) {
-    // It is possible to replace PyAnnotation.getType() with this implementation
-    final PyType typingType = getTypingType(expression, context);
-    if (typingType != null) {
-      return typingType;
-    }
-    final PyType type = context.getType(expression);
-    if (type instanceof PyClassLikeType) {
-      final PyClassLikeType classType = (PyClassLikeType)type;
-      if (classType.isDefinition()) {
-        return classType.toInstance();
-      }
-    }
-    else if (type instanceof PyNoneType) {
-      return type;
-    }
-    return null;
   }
 
   @Nullable

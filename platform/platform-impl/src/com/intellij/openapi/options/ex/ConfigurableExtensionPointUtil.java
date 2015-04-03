@@ -32,6 +32,7 @@ import java.util.*;
 
 /**
  * @author nik
+ * @author Sergey.Malenkov
  */
 public class ConfigurableExtensionPointUtil {
 
@@ -138,7 +139,16 @@ public class ConfigurableExtensionPointUtil {
    * @return the root configurable group that represents a tree of settings
    */
   public static ConfigurableGroup getConfigurableGroup(@Nullable Project project, boolean withIdeSettings) {
-    Map<String, List<Configurable>> map = groupConfigurables(getConfigurables(project, withIdeSettings, true));
+    return getConfigurableGroup(getConfigurables(project, withIdeSettings, true), project);
+  }
+
+  /**
+   * @param configurables a list of settings to process
+   * @param project       a project used to create a project settings group or {@code null}
+   * @return the root configurable group that represents a tree of settings
+   */
+  public static ConfigurableGroup getConfigurableGroup(@NotNull List<Configurable> configurables, @Nullable Project project) {
+    Map<String, List<Configurable>> map = groupConfigurables(configurables);
     return new SortedConfigurableGroup(project, map);
   }
 
@@ -168,16 +178,19 @@ public class ConfigurableExtensionPointUtil {
               parentId = groupId;
             }
           }
+          if (parentId == null) {
+            parentId = "other";
+          }
           if (Node.cyclic(tree, parentId, node)) {
             LOG.warn("ignore cyclic dependency: " + parentId + " cannot contain " + id);
-            parentId = null;
+            parentId = "other";
           }
           node.myParent = Node.add(tree, parentId, node);
           node.myValue = wrapper;
         }
       }
       else {
-        Node.add(tree, null, configurable);
+        Node.add(tree, "other", configurable);
       }
     }
     Map<String, List<Configurable>> map = ContainerUtil.newHashMap();
@@ -200,6 +213,12 @@ public class ConfigurableExtensionPointUtil {
    * @return the list of settings for a group or {@code null} for internal node
    */
   private static List<Configurable> getConfigurables(Map<String, Node<ConfigurableWrapper>> tree, Node<ConfigurableWrapper> node) {
+    if (node.myChildren == null) {
+      if (node.myValue == null) {
+        return ContainerUtil.newArrayList(); // for group only
+      }
+      return null;
+    }
     List<Configurable> list = ContainerUtil.newArrayListWithCapacity(node.myChildren.size());
     for (Iterator<Object> iterator = node.myChildren.iterator(); iterator.hasNext(); iterator.remove()) {
       Object child = iterator.next();
@@ -396,7 +415,7 @@ public class ConfigurableExtensionPointUtil {
    * Utility class that helps to build a tree.
    */
   private static final class Node<V> {
-    List<Object> myChildren = ContainerUtil.newArrayList();
+    List<Object> myChildren;
     Node<V> myParent;
     V myValue;
 
@@ -411,6 +430,9 @@ public class ConfigurableExtensionPointUtil {
 
     private static <I, V> Node<V> add(Map<I, Node<V>> tree, I id, Object child) {
       Node<V> node = get(tree, id);
+      if (node.myChildren == null) {
+        node.myChildren = ContainerUtil.newArrayList();
+      }
       node.myChildren.add(child);
       return node;
     }
