@@ -53,6 +53,7 @@ import com.intellij.util.SmartList;
 import com.intellij.util.containers.ContainerUtil;
 import com.intellij.util.containers.MultiMap;
 import org.jdom.Element;
+import org.jetbrains.annotations.Nls;
 import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -190,25 +191,28 @@ public class DataFlowInspectionBase extends BaseJavaBatchLocalInspectionTool {
   private LocalQuickFix[] createNPEFixes(PsiExpression qualifier, PsiExpression expression, boolean onTheFly) {
     if (qualifier == null || expression == null) return null;
     if (qualifier instanceof PsiMethodCallExpression) return null;
-    if (qualifier instanceof PsiLiteralExpression && ((PsiLiteralExpression)qualifier).getValue() == null) return null;
 
     try {
       final List<LocalQuickFix> fixes = new SmartList<LocalQuickFix>();
 
-      if (PsiUtil.getLanguageLevel(qualifier).isAtLeast(LanguageLevel.JDK_1_4)) {
-        final Project project = qualifier.getProject();
-        final PsiElementFactory elementFactory = JavaPsiFacade.getInstance(project).getElementFactory();
-        final PsiBinaryExpression binary = (PsiBinaryExpression)elementFactory.createExpressionFromText("a != null", null);
-        binary.getLOperand().replace(qualifier);
-        ContainerUtil.addIfNotNull(fixes, createAssertFix(binary, expression));
+      if (!(qualifier instanceof PsiLiteralExpression && ((PsiLiteralExpression)qualifier).getValue() == null))  {
+        if (PsiUtil.getLanguageLevel(qualifier).isAtLeast(LanguageLevel.JDK_1_4)) {
+          final Project project = qualifier.getProject();
+          final PsiElementFactory elementFactory = JavaPsiFacade.getInstance(project).getElementFactory();
+          final PsiBinaryExpression binary = (PsiBinaryExpression)elementFactory.createExpressionFromText("a != null", null);
+          binary.getLOperand().replace(qualifier);
+          ContainerUtil.addIfNotNull(fixes, createAssertFix(binary, expression));
+        }
+
+        addSurroundWithIfFix(qualifier, fixes, onTheFly);
+
+        if (ReplaceWithTernaryOperatorFix.isAvailable(qualifier, expression)) {
+          fixes.add(new ReplaceWithTernaryOperatorFix(qualifier));
+        }
       }
 
-      addSurroundWithIfFix(qualifier, fixes, onTheFly);
-
-      if (ReplaceWithTernaryOperatorFix.isAvailable(qualifier, expression)) {
-        fixes.add(new ReplaceWithTernaryOperatorFix(qualifier));
-      }
-      return fixes.toArray(new LocalQuickFix[fixes.size()]);
+      ContainerUtil.addIfNotNull(fixes, ReplaceOptionalOfWithOfNullableFix.registerReplaceOptionalOfWithOfNullableFix(qualifier));
+      return fixes.isEmpty() ? null : fixes.toArray(new LocalQuickFix[fixes.size()]);
     }
     catch (IncorrectOperationException e) {
       LOG.error(e);
@@ -758,6 +762,70 @@ public class DataFlowInspectionBase extends BaseJavaBatchLocalInspectionTool {
       boolean ephemeralNpe;
       boolean normalNpe;
       boolean normalOk;
+    }
+  }
+
+  private static class ReplaceOptionalOfWithOfNullableFix implements LocalQuickFix {
+
+    public static final String GUAVA_OPTIONAL = "com.google.common.base.Optional";
+    public static final String JAVA_OPTIONAL = "java.util.Optional";
+    private final String myTargetMethodName;
+
+    public ReplaceOptionalOfWithOfNullableFix(final String targetMethodName) {
+      myTargetMethodName = targetMethodName;
+    }
+
+    private static LocalQuickFix registerReplaceOptionalOfWithOfNullableFix(PsiExpression qualifier) {
+      final PsiElement argList = PsiUtil.skipParenthesizedExprUp(qualifier).getParent();
+      if (argList instanceof PsiExpressionList) {
+        final PsiElement parent = argList.getParent();
+        if (parent instanceof PsiMethodCallExpression) {
+          final PsiMethod method = ((PsiMethodCallExpression)parent).resolveMethod();
+          if (method != null) {
+            final PsiClass containingClass = method.getContainingClass();
+            if ("of".equals(method.getName()) && containingClass != null) {
+              final String qualifiedName = containingClass.getQualifiedName();
+              if (JAVA_OPTIONAL.equals(qualifiedName)) {
+                return new ReplaceOptionalOfWithOfNullableFix("ofNullable");
+              } 
+              else if (GUAVA_OPTIONAL.equals(qualifiedName)) {
+                return new ReplaceOptionalOfWithOfNullableFix("fromNullable");
+              }
+            }
+          }
+        }
+      }
+      return null;
+    }
+    
+    @Nls
+    @NotNull
+    @Override
+    public String getName() {
+      return getFamilyName();
+    }
+
+    @NotNull
+    @Override
+    public String getFamilyName() {
+      return "Replace with '." + myTargetMethodName + "()'";
+    }
+
+    @Override
+    public void applyFix(@NotNull Project project, @NotNull ProblemDescriptor descriptor) {
+      final PsiMethodCallExpression
+        methodCallExpression = PsiTreeUtil.getParentOfType(descriptor.getPsiElement(), PsiMethodCallExpression.class);
+      if (methodCallExpression != null) {
+        final PsiElement ofNullableExprName =
+          ((PsiMethodCallExpression)JavaPsiFacade.getElementFactory(project)
+            .createExpressionFromText("Optional.ofNullable(null)", null)).getMethodExpression();
+        final PsiElement referenceNameElement = methodCallExpression.getMethodExpression().getReferenceNameElement();
+        if (referenceNameElement != null) {
+          final PsiElement ofNullableNameElement = ((PsiReferenceExpression)ofNullableExprName).getReferenceNameElement();
+          LOG.assertTrue(ofNullableNameElement != null);
+          referenceNameElement.replace(ofNullableNameElement);
+        }
+      }
     }
   }
 }

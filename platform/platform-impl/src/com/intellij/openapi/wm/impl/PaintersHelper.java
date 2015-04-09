@@ -20,17 +20,20 @@ import com.intellij.openapi.ui.AbstractPainter;
 import com.intellij.openapi.ui.GraphicsConfig;
 import com.intellij.openapi.ui.Painter;
 import com.intellij.openapi.util.Comparing;
+import com.intellij.openapi.util.io.FileUtil;
 import com.intellij.openapi.util.text.StringUtil;
-import com.intellij.openapi.vfs.VfsUtilCore;
+import com.intellij.util.ImageLoader;
+import com.intellij.util.ObjectUtils;
 import com.intellij.util.containers.ContainerUtil;
 import com.intellij.util.ui.JBUI;
 import com.intellij.util.ui.UIUtil;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
-import javax.imageio.ImageIO;
 import javax.swing.*;
 import java.awt.*;
+import java.awt.image.VolatileImage;
+import java.io.File;
 import java.net.URL;
 import java.util.Locale;
 import java.util.Map;
@@ -76,11 +79,10 @@ final class PaintersHelper implements Painter.Listener {
 
   public void paint(Graphics g, JComponent current) {
     if (myPainters.isEmpty()) return;
+    Rectangle clip = ObjectUtils.notNull(g.getClipBounds(), current.getBounds());
 
     Graphics2D g2d = (Graphics2D)g;
     for (Painter painter : myPainters) {
-      Rectangle clip = g.getClipBounds();
-
       Component component = myPainter2Component.get(painter);
       if (component.getParent() == null) continue;
       Rectangle componentBounds = SwingUtilities.convertRectangle(component.getParent(), component.getBounds(), current);
@@ -143,11 +145,13 @@ final class PaintersHelper implements Painter.Listener {
             catch (IllegalArgumentException e) {
               fillType = FillType.SCALE;
             }
-            String url = parts[0].contains("://")? parts[0] :
-                         VfsUtilCore.pathToUrl(parts[0].contains("/") ? parts[0] : PathManager.getConfigPath() + "/" + parts[0]);
+            String filePath = parts[0];
 
-            //todo ImageLoader.loadFromUrl(new URL(url)); fails with AlphaComposite for unknown reason
-            image = ImageIO.read(new URL(url));
+            URL url = filePath.contains("://") ? new URL(filePath) :
+                      (FileUtil.isAbsolutePlatformIndependent(filePath)
+                       ? new File(filePath)
+                       : new File(PathManager.getConfigPath(), filePath)).toURI().toURL();
+            image = ImageLoader.loadFromUrl(url);
           }
           catch (Exception ignored) {
           }
@@ -169,7 +173,7 @@ final class PaintersHelper implements Painter.Listener {
 
   private abstract static class ImagePainter extends AbstractPainter {
 
-    Image scaled;
+    VolatileImage scaled;
 
     @Override
     public boolean needsRepaint() { return true; }
@@ -190,11 +194,28 @@ final class PaintersHelper implements Painter.Listener {
         boolean useWidth = cw * h > ch * w;
         int sw = useWidth ? cw : w * ch / h;
         int sh = useWidth ? h * cw / w : ch;
-        if (sw0 != sw || sh0 != sh) {
-          scaled = image.getScaledInstance(sw, sh, Image.SCALE_SMOOTH);
+        if (sw0 != sw || sh0 != sh || scaled != null && scaled.contentsLost()) {
+          if (sw0 != sw || sh0 != sh || scaled == null) {
+            scaled = createImage(g, sw, sh);
+          }
+          Graphics2D gg = scaled.createGraphics();
+          gg.setRenderingHint(RenderingHints.KEY_INTERPOLATION,
+                              RenderingHints.VALUE_INTERPOLATION_BILINEAR);
+          gg.setComposite(AlphaComposite.Src);
+          gg.drawImage(image, 0, 0, sw, sh, null);
+          gg.dispose();
         }
         w = sw;
         h = sh;
+      }
+      else if (scaled == null || scaled.contentsLost()) {
+        if (scaled == null) {
+          scaled = createImage(g, w, h);
+        }
+        Graphics2D gg = scaled.createGraphics();
+        gg.setComposite(AlphaComposite.Src);
+        gg.drawImage(image, 0, 0, null);
+        gg.dispose();
       }
 
       GraphicsConfig cfg = new GraphicsConfig(g).setAlpha(alpha);
@@ -205,7 +226,7 @@ final class PaintersHelper implements Painter.Listener {
         int y = fillType == FillType.TOP_CENTER? i.top :
                 fillType == FillType.BOTTOM_CENTER? ch0 - i.bottom - h :
                 i.top + (ch - h) / 2;
-        UIUtil.drawImage(g, fillType == FillType.SCALE ? scaled : image, x, y, null);
+        UIUtil.drawImage(g, scaled, x, y, null);
         if (fillType == FillType.BG_CENTER) {
           g.setColor(component.getBackground());
           g.fillRect(0, 0, x, ch0);
@@ -218,14 +239,14 @@ final class PaintersHelper implements Painter.Listener {
                fillType == FillType.BOTTOM_LEFT || fillType == FillType.BOTTOM_RIGHT) {
         int x = fillType == FillType.TOP_LEFT || fillType == FillType.BOTTOM_LEFT ? i.left : cw0 - i.right - w;
         int y = fillType == FillType.TOP_LEFT || fillType == FillType.TOP_RIGHT ? i.top : ch0 - i.bottom - h;
-        UIUtil.drawImage(g, image, x, y, null);
+        UIUtil.drawImage(g, scaled, x, y, null);
       }
       else if (fillType == FillType.TILE) {
         int x = i.left;
         int y = i.top;
         while (w > 0 && x < cw) {
           while (h > 0 && y < ch) {
-            UIUtil.drawImage(g, image, x, y, null);
+            UIUtil.drawImage(g, scaled, x, y, null);
             y += h;
           }
           y = 0;
@@ -233,6 +254,17 @@ final class PaintersHelper implements Painter.Listener {
         }
       }
       cfg.restore();
+    }
+
+    @NotNull
+    private static VolatileImage createImage(Graphics2D g, int w, int h) {
+      GraphicsConfiguration configuration = g.getDeviceConfiguration();
+      try {
+        return configuration.createCompatibleVolatileImage(w, h, new ImageCapabilities(true), Transparency.TRANSLUCENT);
+      }
+      catch (Exception e) {
+        return configuration.createCompatibleVolatileImage(w, h, Transparency.TRANSLUCENT);
+      }
     }
   }
 }

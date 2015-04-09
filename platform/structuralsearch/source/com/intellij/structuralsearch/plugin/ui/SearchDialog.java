@@ -108,7 +108,7 @@ public class SearchDialog extends DialogWrapper {
     if (showScope) setModal(false);
     myShowScopePanel = showScope;
     myRunFindActionOnClose = runFindActionOnClose;
-    this.searchContext = (SearchContext)searchContext.clone();
+    this.searchContext = searchContext;
     setTitle(getDefaultTitle());
 
     if (runFindActionOnClose) {
@@ -654,7 +654,7 @@ public class SearchDialog extends DialogWrapper {
             EditVarConstraintsDialog.setProject(searchContext.getProject());
             new EditVarConstraintsDialog(
               searchContext.getProject(),
-              model, getVariablesFromListeners(),
+              model.getConfig(), getVariablesFromListeners(),
               (FileType)fileTypes.getSelectedItem()
             ).show();
             initiateValidation();
@@ -769,9 +769,7 @@ public class SearchDialog extends DialogWrapper {
       if (!setSomeText) {
         int selection = existingTemplatesComponent.getHistoryList().getSelectedIndex();
         if (selection != -1) {
-          setValuesFromConfig(
-            (Configuration)existingTemplatesComponent.getHistoryList().getSelectedValue()
-          );
+          setValuesFromConfig((Configuration)existingTemplatesComponent.getHistoryList().getSelectedValue());
         }
       }
     }

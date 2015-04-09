@@ -89,6 +89,10 @@ public class OverloadResolutionTest extends LightDaemonAnalyzerTestCase {
     doTest();
   }
 
+  public void testLambdaValueCompatibleWithNestedTryWithResources() throws Exception {
+    doTest(false);
+  }
+
   public void testManyOverloadsWithVarargs() throws Exception {
     PlatformTestUtil.startPerformanceTest("Overload resolution with 14 overloads", 20000, new ThrowableRunnable() {
       @Override
@@ -99,6 +103,10 @@ public class OverloadResolutionTest extends LightDaemonAnalyzerTestCase {
   }
 
   public void testMultipleOverloadsWithNestedGeneric() throws Exception {
+    doTest(false);
+  }
+
+  public void testSecondSearchPossibleForFunctionalInterfacesWithPrimitiveFisrtParameter() throws Exception {
     doTest(false);
   }
 
