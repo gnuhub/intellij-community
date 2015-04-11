@@ -96,7 +96,7 @@ public abstract class JavaTestFrameworkRunnableState<T extends ModuleBasedConfig
     testConsoleProperties.setIfUndefined(TestConsoleProperties.HIDE_PASSED_TESTS, false);
 
     final BaseTestsOutputConsoleView consoleView =
-      SMTestRunnerConnectionUtil.createConsoleWithCustomLocator(getFrameworkName(), testConsoleProperties, getEnvironment(), null);
+      SMTestRunnerConnectionUtil.createConsoleWithCustomLocator(getFrameworkName(), testConsoleProperties, getEnvironment(), new JavaTestLocationProvider(testConsoleProperties.getScope()));
     final SMTestRunnerResultsForm viewer = ((SMTRunnerConsoleView)consoleView).getResultsViewer();
     Disposer.register(getConfiguration().getProject(), consoleView);
 
@@ -111,6 +111,9 @@ public abstract class JavaTestFrameworkRunnableState<T extends ModuleBasedConfig
                 !ResetConfigurationModuleAdapter.tryWithAnotherModule(getConfiguration(), testConsoleProperties.isDebug())) {
               TestsUIUtil.notifyByBalloon(testConsoleProperties.getProject(), viewer.hasTestSuites(), viewer.getRoot(), testConsoleProperties, null);
             }
+
+            deleteTempFiles();
+            clear();
           }
         };
         SwingUtilities.invokeLater(runnable);
@@ -154,7 +157,14 @@ public abstract class JavaTestFrameworkRunnableState<T extends ModuleBasedConfig
       ext.updateJavaParameters(getConfiguration(), javaParameters, getRunnerSettings());
     }
 
-    JavaParametersUtil.configureConfiguration(javaParameters, getConfiguration());
+    final String parameters = getConfiguration().getProgramParameters();
+    getConfiguration().setProgramParameters(null);
+    try {
+      JavaParametersUtil.configureConfiguration(javaParameters, getConfiguration());
+    }
+    finally {
+      getConfiguration().setProgramParameters(parameters);
+    }
     JavaSdkUtil.addRtJar(javaParameters.getClassPath());
 
     configureClasspath(javaParameters);
@@ -214,5 +224,10 @@ public abstract class JavaTestFrameworkRunnableState<T extends ModuleBasedConfig
     }
   }
 
+  protected void deleteTempFiles() {
+    if (myTempFile != null) {
+      FileUtil.delete(myTempFile);
+    }
+  }
 
 }

@@ -203,10 +203,7 @@ public class DiffUtil {
     if (editor == null) return;
     editor.getCaretModel().removeSecondaryCarets();
     editor.getCaretModel().moveToLogicalPosition(position);
-    ScrollingModel scrollingModel = editor.getScrollingModel();
-    scrollingModel.disableAnimation();
-    scrollingModel.scrollToCaret(ScrollType.CENTER);
-    scrollingModel.enableAnimation();
+    scrollToCaret(editor);
   }
 
   public static void scrollToLineAnimated(@Nullable final Editor editor, int line) {
@@ -860,6 +857,20 @@ public class DiffUtil {
   //
   // UserData
   //
+
+  public static <T> UserDataHolderBase createUserDataHolder(@NotNull Key<T> key, @Nullable T value) {
+    UserDataHolderBase holder = new UserDataHolderBase();
+    holder.putUserData(key, value);
+    return holder;
+  }
+
+  public static <T> UserDataHolderBase createUserDataHolder(@NotNull Key<T> key1, @Nullable T value1,
+                                                            @NotNull Key<T> key2, @Nullable T value2) {
+    UserDataHolderBase holder = new UserDataHolderBase();
+    holder.putUserData(key1, value1);
+    holder.putUserData(key2, value2);
+    return holder;
+  }
 
   public static boolean isUserDataFlagSet(@NotNull Key<Boolean> key, UserDataHolder... holders) {
     for (UserDataHolder holder : holders) {
