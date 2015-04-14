@@ -82,7 +82,7 @@ public abstract class TwosideTextDiffViewer extends TextDiffViewerBase {
 
   @NotNull private final MyScrollToLineHelper myScrollToLineHelper = new MyScrollToLineHelper();
 
-  @Nullable private TwosideSyncScrollSupport mySyncScrollListener;
+  @Nullable protected TwosideSyncScrollSupport mySyncScrollSupport;
 
   @NotNull private Side myCurrentSide;
 
@@ -230,7 +230,7 @@ public abstract class TwosideTextDiffViewer extends TextDiffViewerBase {
     if (myEditor1 != null && myEditor2 != null) {
       SyncScrollSupport.SyncScrollable scrollable = getSyncScrollable();
       if (scrollable != null) {
-        mySyncScrollListener = new TwosideSyncScrollSupport(myEditor1, myEditor2, scrollable);
+        mySyncScrollSupport = new TwosideSyncScrollSupport(myEditor1, myEditor2, scrollable);
       }
     }
   }
@@ -248,15 +248,15 @@ public abstract class TwosideTextDiffViewer extends TextDiffViewerBase {
       myEditor2.getScrollingModel().removeVisibleAreaListener(myVisibleAreaListener);
     }
     if (myEditor1 != null && myEditor2 != null) {
-      if (mySyncScrollListener != null) {
-        mySyncScrollListener = null;
+      if (mySyncScrollSupport != null) {
+        mySyncScrollSupport = null;
       }
     }
   }
 
   protected void disableSyncScrollSupport(boolean disable) {
-    if (mySyncScrollListener != null) {
-      mySyncScrollListener.myDuringSyncScroll = disable;
+    if (mySyncScrollSupport != null) {
+      mySyncScrollSupport.myDuringSyncScroll = disable;
     }
   }
 
@@ -299,13 +299,13 @@ public abstract class TwosideTextDiffViewer extends TextDiffViewerBase {
   @NotNull
   public EditorEx getCurrentEditor() {
     //noinspection ConstantConditions
-    return getCurrentSide().isLeft() ? myEditor1 : myEditor2;
+    return getCurrentSide().select(myEditor1, myEditor2);
   }
 
   @NotNull
   public DocumentContent getCurrentContent() {
     //noinspection ConstantConditions
-    return getCurrentSide().isLeft() ? myActualContent1 : myActualContent2;
+    return getCurrentSide().select(myActualContent1, myActualContent2);
   }
 
   @Nullable
@@ -325,8 +325,8 @@ public abstract class TwosideTextDiffViewer extends TextDiffViewerBase {
   @CalledInAwt
   @NotNull
   protected LogicalPosition transferPosition(@NotNull Side baseSide, @NotNull LogicalPosition position) {
-    if (mySyncScrollListener == null) return position;
-    int line = mySyncScrollListener.getScrollable().transfer(baseSide, position.line);
+    if (mySyncScrollSupport == null) return position;
+    int line = mySyncScrollSupport.getScrollable().transfer(baseSide, position.line);
     return new LogicalPosition(line, position.column);
   }
 
@@ -334,7 +334,7 @@ public abstract class TwosideTextDiffViewer extends TextDiffViewerBase {
   protected void scrollToLine(@NotNull Side side, int line) {
     Editor editor = side.select(myEditor1, myEditor2);
     if (editor == null) return;
-    DiffUtil.scrollEditor(editor, line);
+    DiffUtil.scrollEditor(editor, line, false);
     myCurrentSide = side;
   }
 
@@ -479,7 +479,7 @@ public abstract class TwosideTextDiffViewer extends TextDiffViewerBase {
   private class MyVisibleAreaListener implements VisibleAreaListener {
     @Override
     public void visibleAreaChanged(VisibleAreaEvent e) {
-      if (mySyncScrollListener != null) mySyncScrollListener.visibleAreaChanged(e);
+      if (mySyncScrollSupport != null) mySyncScrollSupport.visibleAreaChanged(e);
       if (Registry.is("diff.divider.repainting.fix")) {
         myContentPanel.repaint();
       }
@@ -569,7 +569,7 @@ public abstract class TwosideTextDiffViewer extends TextDiffViewerBase {
         }
       }
       else {
-        DiffUtil.scrollToCaret(getCurrentEditor());
+        DiffUtil.scrollToCaret(getCurrentEditor(), false);
       }
       return true;
     }
@@ -581,7 +581,7 @@ public abstract class TwosideTextDiffViewer extends TextDiffViewerBase {
       if (side.select(myEditor1, myEditor2) == null) return false;
 
       myCurrentSide = side;
-      DiffUtil.scrollEditor(getCurrentEditor(), line);
+      DiffUtil.scrollEditor(getCurrentEditor(), line, false);
       return true;
     }
   }

@@ -73,6 +73,7 @@ public class SMTRunnerConsoleProperties extends TestConsoleProperties implements
     myPrintTestingStartedTime = printTestingStartedTime;
   }
 
+  @NotNull
   private static Storage.PropertiesComponentStorage getStorage(String testFrameworkName) {
     return new Storage.PropertiesComponentStorage(testFrameworkName + "Support.", PropertiesComponent.getInstance());
   }
@@ -160,5 +161,9 @@ public class SMTRunnerConsoleProperties extends TestConsoleProperties implements
     }
 
     return new OpenFileDescriptor(project, file, offset);
+  }
+
+  public boolean fixEmptySuite() {
+    return false;
   }
 }

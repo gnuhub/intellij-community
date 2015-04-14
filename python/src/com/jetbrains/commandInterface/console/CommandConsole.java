@@ -23,6 +23,8 @@ import com.intellij.execution.process.ProcessEvent;
 import com.intellij.execution.process.ProcessHandler;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.application.ModalityState;
+import com.intellij.openapi.editor.EditorSettings;
+import com.intellij.openapi.editor.ex.EditorEx;
 import com.intellij.openapi.fileTypes.PlainTextLanguage;
 import com.intellij.openapi.module.Module;
 import com.intellij.openapi.util.Condition;
@@ -35,6 +37,9 @@ import com.jetbrains.toolWindowWithActions.ConsoleWithProcess;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
+import javax.swing.*;
+import javax.swing.border.Border;
+import java.awt.*;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
@@ -64,6 +69,10 @@ import java.util.List;
  */
 @SuppressWarnings({"DeserializableClassInSecureContext", "SerializableClassInSecureContext"}) // Nobody will serialize console
 final class CommandConsole extends LanguageConsoleImpl implements Consumer<String>, Condition<LanguageConsoleView>, ConsoleWithProcess {
+  /**
+   * Width of border to create around console
+   */
+  static final int BORDER_SIZE_PX = 3;
   /**
    * List of commands (to be injected into {@link CommandLineFile}) if any
    */
@@ -128,6 +137,21 @@ final class CommandConsole extends LanguageConsoleImpl implements Consumer<Strin
     return console;
   }
 
+  /**
+   * Enables/disables left border {@link #BORDER_SIZE_PX} width for certain editors.
+   *
+   * @param editors editors to enable/disable border
+   * @param enable  whether border should be enabled
+   */
+  private static void configureLeftBorder(final boolean enable, @NotNull final EditorEx... editors) {
+    for (final EditorEx editor : editors) {
+      final Color backgroundColor = editor.getBackgroundColor(); // Border have the same color console background has
+      final int thickness = enable ? BORDER_SIZE_PX : 0;
+      final Border border = BorderFactory.createMatteBorder(0, thickness, 0, 0, backgroundColor);
+      editor.getComponent().setBorder(border);
+    }
+  }
+
   @Override
   public void attachToProcess(final ProcessHandler processHandler) {
     super.attachToProcess(processHandler);
@@ -138,6 +162,8 @@ final class CommandConsole extends LanguageConsoleImpl implements Consumer<Strin
    * Switches console to "command-mode" (see class doc for details)
    */
   private void switchToCommandMode() {
+    // "upper" and "bottom" parts of console both need padding in command mode
+    configureLeftBorder(true, getConsoleEditor(), getHistoryViewer());
     myProcessHandler = null;
     setPrompt(getTitle() + " > ");
 
@@ -164,6 +190,7 @@ final class CommandConsole extends LanguageConsoleImpl implements Consumer<Strin
    * @param processHandler process to attach to
    */
   private void switchToProcessMode(@NotNull final ProcessHandler processHandler) {
+    configureLeftBorder(false, getConsoleEditor()); // "bottom" part of console do not need padding now because it is used for user input
     myProcessHandler = processHandler;
     ApplicationManager.getApplication().invokeAndWait(new Runnable() {
       @Override
@@ -252,5 +279,14 @@ final class CommandConsole extends LanguageConsoleImpl implements Consumer<Strin
       super.startNotified(event);
       switchToProcessMode(event.getProcessHandler());
     }
+  }
+
+  @Override
+  protected void setupEditorDefault(@NotNull final EditorEx editor) {
+    super.setupEditorDefault(editor);
+    // We do not need spaces here, because it leads to PY-15557
+    final EditorSettings editorSettings = editor.getSettings();
+    editorSettings.setAdditionalLinesCount(0);
+    editorSettings.setAdditionalColumnsCount(0);
   }
 }
