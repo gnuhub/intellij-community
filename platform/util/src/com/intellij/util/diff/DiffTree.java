@@ -117,7 +117,9 @@ public class DiffTree<OT, NT> {
 
       int minSize = Math.min(oldChildrenSize, newChildrenSize);
       int suffixLength = match(oldChildren, oldChildrenSize - 1, newChildren, newChildrenSize - 1, level, -1, minSize);
-      int prefixLength = oldChildrenSize == 1 && newChildrenSize == 1 ? 0 : match(oldChildren, 0, newChildren, 0, level, 1, minSize-suffixLength);
+      // for equal size old and new children we have to compare one element less because it was already checked in (unsuccessful) suffix match
+      int maxPrefixLength = minSize - suffixLength - (oldChildrenSize == newChildrenSize && suffixLength < minSize ? 1 : 0);
+      int prefixLength = match(oldChildren, 0, newChildren, 0, level, 1, maxPrefixLength);
 
       if (oldChildrenSize == newChildrenSize && suffixLength + prefixLength == oldChildrenSize) {
         result = CompareResult.EQUAL;
@@ -263,6 +265,7 @@ public class DiffTree<OT, NT> {
       if (c11 == CompareResult.DRILL_DOWN_NEEDED) {
         CharSequence oldText = myOldTree.toString(oldChild);
         CharSequence newText = myNewTree.toString(newChild);
+        // drill down only if node texts match, but when they do, match all the way down unconditionally
         c11 = StringUtil.equals(oldText, newText)
               ? build(oldChild, newChild, level + 1, DiffTree.<OT, NT>emptyConsumer())
               : CompareResult.NOT_EQUAL;
