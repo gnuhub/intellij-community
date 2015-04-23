@@ -34,6 +34,7 @@ import com.intellij.openapi.ui.popup.Balloon;
 import com.intellij.openapi.ui.popup.BalloonBuilder;
 import com.intellij.openapi.ui.popup.JBPopupFactory;
 import com.intellij.openapi.util.Disposer;
+import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.psi.codeStyle.CodeStyleScheme;
 import com.intellij.psi.codeStyle.CodeStyleSchemes;
@@ -145,13 +146,16 @@ public class ManageCodeStyleSchemesDialog extends DialogWrapper {
         }.show(myModel.getSchemes());
       }
       else {
-        String selectedImporterName = importSourceChooserDialog.getSelectedSourceName();
+        final String selectedImporterName = importSourceChooserDialog.getSelectedSourceName();
         if (selectedImporterName != null) {
+          final SchemeImporter<CodeStyleScheme> importer = SchemeImporterEP.getImporter(selectedImporterName, CodeStyleScheme.class);
+          if (importer == null) return;
           try {
-            String schemeName = importExternalCodeStyle(selectedImporterName);
-            if (schemeName != null) {
+            final CodeStyleScheme scheme = importExternalCodeStyle(importer);
+            if (scheme != null) {
+              final String additionalImportInfo = StringUtil.notNullize(importer.getAdditionalImportInfo(scheme));
               showStatus(myImportButton,
-                         ApplicationBundle.message("message.code.style.scheme.import.success", selectedImporterName, schemeName),
+                         ApplicationBundle.message("message.code.style.scheme.import.success", selectedImporterName, scheme.getName(), additionalImportInfo),
                          MessageType.INFO);
             }
           }
@@ -179,19 +183,16 @@ public class ManageCodeStyleSchemesDialog extends DialogWrapper {
   }  
   
   @Nullable
-  private String importExternalCodeStyle(String importerName) throws SchemeImportException {
-    final SchemeImporter<CodeStyleScheme> importer = SchemeImporterEP.getImporter(importerName, CodeStyleScheme.class);
-    if (importer != null) {
-      final VirtualFile selectedFile = selectImportSource(importer.getSourceExtensions());
-      if (selectedFile != null) {
-        CodeStyleSchemesUIConfiguration.Util.setRecentImportFile(selectedFile);
-        final SchemeCreator schemeCreator = new SchemeCreator();
-        final CodeStyleScheme
-          schemeImported = importer.importScheme(myModel.getProject(), selectedFile, myModel.getSelectedScheme(), schemeCreator);
-        if (schemeImported != null) {
-          myModel.fireSchemeChanged(schemeImported);
-          return schemeImported.getName();
-        }
+  private CodeStyleScheme importExternalCodeStyle(final SchemeImporter<CodeStyleScheme> importer) throws SchemeImportException {
+    final VirtualFile selectedFile = selectImportSource(importer.getSourceExtensions());
+    if (selectedFile != null) {
+      CodeStyleSchemesUIConfiguration.Util.setRecentImportFile(selectedFile);
+      final SchemeCreator schemeCreator = new SchemeCreator();
+      final CodeStyleScheme
+        schemeImported = importer.importScheme(myModel.getProject(), selectedFile, myModel.getSelectedScheme(), schemeCreator);
+      if (schemeImported != null) {
+        myModel.fireSchemeChanged(schemeImported);
+        return schemeImported;
       }
     }
     return null;
@@ -262,19 +263,7 @@ public class ManageCodeStyleSchemesDialog extends DialogWrapper {
     @Override
     public CodeStyleScheme createNewScheme(@Nullable String targetName) {
       if (targetName == null) targetName = ApplicationBundle.message("code.style.scheme.import.unnamed");
-
-      for (CodeStyleScheme scheme : myModel.getSchemes()) {
-        if (targetName.equals(scheme.getName())) {
-          int result = Messages.showYesNoDialog(myContentPane,
-                                                ApplicationBundle.message("message.code.style.scheme.already.exists", targetName),
-                                                ApplicationBundle.message("title.code.style.settings.import"),
-                                                Messages.getQuestionIcon());
-          if (result != Messages.YES) {
-            return null;
-          }
-        }
-      }
-      int row = mySchemesTableModel.createNewScheme(getSelectedScheme(), targetName);
+      final int row = mySchemesTableModel.createNewScheme(getSelectedScheme(), targetName);
       mySchemesTable.getSelectionModel().setSelectionInterval(row, row);
       return mySchemesTableModel.getSchemeAt(row);
     }

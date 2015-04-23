@@ -182,6 +182,16 @@ public class ApplicationImpl extends PlatformComponentManagerImpl implements App
   @Override
   public void init() {
     loadComponents();
+
+    for (ApplicationLoadListener listener : ApplicationLoadListener.EP_NAME.getExtensions()) {
+      try {
+        listener.beforeApplicationLoaded(this);
+      }
+      catch (Exception e) {
+        LOG.error(e);
+      }
+    }
+
     super.init();
   }
 
@@ -482,7 +492,7 @@ public class ApplicationImpl extends PlatformComponentManagerImpl implements App
       store.load();
     }
     catch (StateStorageException e) {
-      throw new IOException(e.getMessage());
+      throw new IOException(e);
     }
     finally {
       token.finish();

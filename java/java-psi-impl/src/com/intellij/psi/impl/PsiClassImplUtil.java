@@ -378,6 +378,14 @@ public class PsiClassImplUtil {
       ElementClassFilter filter = key == MemberType.CLASS ? ElementClassFilter.CLASS :
                                   key == MemberType.METHOD ? ElementClassFilter.METHOD :
                                   ElementClassFilter.FIELD;
+      final ElementClassHint classHint = new ElementClassHint() {
+        @Override
+        public boolean shouldProcess(DeclarationKind kind) {
+          return key == MemberType.CLASS && kind == DeclarationKind.CLASS ||
+                 key == MemberType.FIELD && (kind == DeclarationKind.FIELD || kind == DeclarationKind.ENUM_CONST) ||
+                 key == MemberType.METHOD && kind == DeclarationKind.METHOD;
+        }
+      };
       FilterScopeProcessor<MethodCandidateInfo> processor = new FilterScopeProcessor<MethodCandidateInfo>(filter) {
         @Override
         protected void add(@NotNull PsiElement element, @NotNull PsiSubstitutor substitutor) {
@@ -394,6 +402,12 @@ public class PsiClassImplUtil {
             }
             listByName.add(info);
           }
+        }
+
+        @Override
+        public <K> K getHint(@NotNull Key<K> hintKey) {
+          //noinspection unchecked
+          return ElementClassHint.KEY == hintKey ? (K)classHint : super.getHint(hintKey);
         }
       };
 
@@ -466,15 +480,11 @@ public class PsiClassImplUtil {
     PsiSubstitutor substitutor = state.get(PsiSubstitutor.KEY);
     isRaw = isRaw || PsiUtil.isRawSubstitutor(aClass, substitutor);
 
-    ParameterizedCachedValue<Map<GlobalSearchScope, MembersMap>, PsiClass> cache = getValues(aClass); //aClass.getUserData(MAP_IN_CLASS_KEY);
-    boolean upToDate = cache.hasUpToDateValue();
-    if (/*true || */upToDate) {
-      final NameHint nameHint = processor.getHint(NameHint.KEY);
-      if (nameHint != null) {
-        String name = nameHint.getName(state);
-        return processCachedMembersByName(aClass, processor, state, visited, last, place, isRaw, substitutor,
-                                          cache.getValue(aClass).get(resolveScope), name,languageLevel);
-      }
+    final NameHint nameHint = processor.getHint(NameHint.KEY);
+    if (nameHint != null) {
+      String name = nameHint.getName(state);
+      return processCachedMembersByName(aClass, processor, state, visited, last, place, isRaw, substitutor,
+                                        getValues(aClass).getValue(aClass).get(resolveScope), name,languageLevel);
     }
     return processDeclarationsInClassNotCached(aClass, processor, state, visited, last, place, isRaw, languageLevel, resolveScope);
   }
