@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2009 JetBrains s.r.o.
+ * Copyright 2000-2015 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,19 +13,11 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
-/*
- * User: anna
- * Date: 30-Jul-2007
- */
-package com.theoryinpractice.testng;
-
-import com.intellij.javaee.ResourceRegistrar;
-import com.intellij.javaee.StandardResourceProvider;
-
-public class TestNGPlugin implements StandardResourceProvider {
-  public void registerResources(ResourceRegistrar registrar) {
-    registrar.addStdResource("http://testng.org/testng-1.0.dtd", "/resources/standardSchemas/testng-1.0.dtd", getClass());
+class Test {
+  public static <E> E getValue(final Object param, final Class<E> clazz) {
+    if(param instanceof String && String.class.equals(clazz)) {
+      return (E)<caret>param;
+    }
+    return null;
   }
-  
 }

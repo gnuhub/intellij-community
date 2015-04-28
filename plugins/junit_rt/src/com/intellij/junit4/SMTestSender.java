@@ -31,12 +31,13 @@ import org.junit.runner.Result;
 import org.junit.runner.notification.Failure;
 import org.junit.runner.notification.RunListener;
 
+import java.io.PrintStream;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 
-class SMTestSender extends RunListener {
+public class SMTestSender extends RunListener {
   private static final String MESSAGE_LENGTH_FOR_PATTERN_MATCHING = "idea.junit.message.length.threshold";
   private static final String JUNIT_FRAMEWORK_COMPARISON_NAME = ComparisonFailure.class.getName();
   private static final String ORG_JUNIT_COMPARISON_NAME = "org.junit.ComparisonFailure";
@@ -50,7 +51,7 @@ class SMTestSender extends RunListener {
   }
 
   public void testRunStarted(Description description) throws Exception {
-    myCurrentClassName = myIgnoreTopSuite ? description.toString() : null;
+    myCurrentClassName = myIgnoreTopSuite ? getShortName(description.toString()) : null;
     System.out.println("##teamcity[enteredTheMatrix]\n");
   }
 
@@ -66,11 +67,11 @@ class SMTestSender extends RunListener {
   public void testStarted(Description description) throws Exception {
     final String methodName = JUnit4ReflectionUtil.getMethodName(description);
     final int paramStart = methodName.indexOf('[');
-    if (paramStart < 0 && myParamName != null){
+    if (myParamName != null){
       System.out.println("##teamcity[testSuiteFinished name=\'" + escapeName(myParamName) + "\']");
       myParamName = null;
     }
-    final String className = JUnit4ReflectionUtil.getClassName(description);
+    final String className = getShortName(JUnit4ReflectionUtil.getClassName(description));
     if (!className.equals(myCurrentClassName)) {
       if (myCurrentClassName != null) {
         System.out.println("##teamcity[testSuiteFinished name=\'" + escapeName(myCurrentClassName) + "\']");
@@ -81,9 +82,6 @@ class SMTestSender extends RunListener {
     if (paramStart > -1) {
       final String paramName = methodName.substring(paramStart, methodName.length());
       if (!paramName.equals(myParamName)) {
-        if (myParamName != null) {
-          System.out.println("##teamcity[testSuiteFinished name=\'" + escapeName(myParamName) + "\']");
-        }
         myParamName = paramName;
         System.out.println("##teamcity[testSuiteStarted name =\'" + escapeName(myParamName) + "\']");
       }
@@ -100,23 +98,8 @@ class SMTestSender extends RunListener {
     final String trace = failure.getTrace();
     final Map attrs = new HashMap();
     attrs.put("name", JUnit4ReflectionUtil.getMethodName(failure.getDescription()));
-    attrs.put("message", failureMessage != null ? failureMessage : "");
     final ComparisonFailureData notification = createExceptionNotification(failure.getException());
-    if (notification != null) {
-      attrs.put("expected", notification.getExpected());
-      attrs.put("actual", notification.getActual());
-
-      final int failureIdx = trace.indexOf(failureMessage);
-      attrs.put("details", failureIdx > -1 ? trace.substring(failureIdx + failureMessage.length()) : trace);
-      final String filePath = notification.getFilePath();
-      if (filePath != null) {
-        attrs.put("expectedFile", filePath);
-      }
-    } else {
-      attrs.put("details", trace);
-      attrs.put("error", "true");
-    }
-
+    ComparisonFailureData.registerSMAttributes(notification, trace, failureMessage, attrs);
     System.out.println(ServiceMessage.asString(ServiceMessageTypes.TEST_FAILED, attrs));
   }
 
@@ -199,18 +182,20 @@ class SMTestSender extends RunListener {
     return messageLength < threshold;
   }
 
-  private static void sendTree(JUnit4IdeaTestRunner runner, Object description, List tests) {
+  private static void sendTree(Object description, List tests, PrintStream printStream) {
     if (tests.isEmpty()) {
       final String methodName = JUnit4ReflectionUtil.getMethodName((Description)description);
-      System.out.println("##teamcity[suiteTreeNode name=\'" + escapeName(methodName) +
-                         "\' locationHint=\'java:test://" + escapeName(JUnit4ReflectionUtil.getClassName((Description)description) + "." + methodName) + "\']");
+      if (methodName != null) {
+        printStream.println("##teamcity[suiteTreeNode name=\'" + escapeName(methodName) +
+                            "\' locationHint=\'java:test://" + escapeName(JUnit4ReflectionUtil.getClassName((Description)description) + "." + methodName) + "\']");
+      }
     }
     boolean pass = false;
     for (Iterator iterator = tests.iterator(); iterator.hasNext(); ) {
       final Object next = iterator.next();
-      final List childTests = runner.getChildTests(next);
+      final List childTests = ((Description)next).getChildren();
       final Description nextDescription = (Description)next;
-      if ((childTests.isEmpty() || isParameter(nextDescription)) && !pass) {
+      if ((childTests.isEmpty() && JUnit4ReflectionUtil.getMethodName(nextDescription) != null || isParameter(nextDescription)) && !pass) {
         pass = true;
         final String className = JUnit4ReflectionUtil.getClassName((Description)description);
         String locationHint = className;
@@ -224,13 +209,12 @@ class SMTestSender extends RunListener {
             }
           }
         }
-        System.out.println("##teamcity[suiteTreeStarted name=\'" + escapeName(className) +
-                           "\' locationHint=\'java:suite://" + escapeName(locationHint) + "\']");
+        printStream.println("##teamcity[suiteTreeStarted name=\'" + escapeName(getShortName(className)) + "\' locationHint=\'java:suite://" + escapeName(locationHint) + "\']");
       }
-      sendTree(runner, next, childTests);
+      sendTree(next, childTests, printStream);
     }
     if (pass) {
-      System.out.println("##teamcity[suiteTreeEnded name=\'" + escapeName(JUnit4ReflectionUtil.getClassName((Description)description)) + "\']");
+      printStream.println("##teamcity[suiteTreeEnded name=\'" + escapeName(getShortName(JUnit4ReflectionUtil.getClassName((Description)description))) + "\']");
     }
   }
 
@@ -239,11 +223,23 @@ class SMTestSender extends RunListener {
     return displayName.startsWith("[") && displayName.endsWith("]");
   }
 
-  public void sendTree(JUnit4IdeaTestRunner runner, Description description) {
-    final List tests = runner.getChildTests(description);
+  public void sendTree(Description description, PrintStream printStream) {
+    final List tests = description.getChildren();
     if (tests.isEmpty()) {
       myIgnoreTopSuite = true;
     }
-    sendTree(runner, description, tests);
+    sendTree(description, tests, printStream);
+  }
+
+  private static String getShortName(String fqName) {
+    if (fqName.startsWith("[")) {
+      //param name
+      return fqName;
+    }
+    int lastPointIdx = fqName.lastIndexOf('.');
+    if (lastPointIdx >= 0) {
+      return fqName.substring(lastPointIdx + 1);
+    }
+    return fqName;
   }
 }

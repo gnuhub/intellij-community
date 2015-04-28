@@ -1,5 +1,6 @@
 package org.testng;
 
+import com.intellij.rt.execution.junit.ComparisonFailureData;
 import jetbrains.buildServer.messages.serviceMessages.MapSerializerUtil;
 import jetbrains.buildServer.messages.serviceMessages.ServiceMessage;
 import jetbrains.buildServer.messages.serviceMessages.ServiceMessageTypes;
@@ -27,7 +28,7 @@ public class IDEATestNGRemoteListener implements ISuiteListener, IResultListener
   }
 
   public void onConfigurationSuccess(ITestResult result) {
-    final String className = result.getTestClass().getName();
+    final String className = getShortName(result.getTestClass().getName());
     System.out.println("##teamcity[testSuiteStarted name=\'" + escapeName(className) + "\']");
     final String methodName = result.getMethod().getMethodName();
     System.out.println("##teamcity[testStarted name=\'" + escapeName(methodName) + "\']");
@@ -36,7 +37,7 @@ public class IDEATestNGRemoteListener implements ISuiteListener, IResultListener
   }
 
   public void onConfigurationFailure(ITestResult result) {
-    final String className = result.getTestClass().getName();
+    final String className = getShortName(result.getTestClass().getName());
     System.out.println("##teamcity[testSuiteStarted name=\'" + escapeName(className) + "\']");
     final String methodName = result.getMethod().getMethodName();
     System.out.println("##teamcity[testStarted name=\'" + escapeName(methodName) + "\']");
@@ -57,7 +58,7 @@ public class IDEATestNGRemoteListener implements ISuiteListener, IResultListener
   }
 
   public void onTestStart(ITestResult result) {
-    final String className = result.getTestClass().getName();
+    final String className = getShortName(result.getTestClass().getName());
     if (myCurrentClassName == null || !myCurrentClassName.equals(className)) {
       if (myCurrentClassName != null) {
         System.out.println("##teamcity[testSuiteFinished name=\'" + escapeName(myCurrentClassName) + "\']");
@@ -112,9 +113,14 @@ public class IDEATestNGRemoteListener implements ISuiteListener, IResultListener
     final String methodName = getMethodName(result);
     attrs.put("name", methodName);
     final String failureMessage = ex.getMessage();
-    attrs.put("message", failureMessage != null ? failureMessage : "");
-    attrs.put("details", trace);
-    attrs.put("error", "true");
+    ComparisonFailureData notification;
+    try {
+      notification = TestNGExpectedPatterns.createExceptionNotification(failureMessage);
+    }
+    catch (Throwable e) {
+      notification = null;
+    }
+    ComparisonFailureData.registerSMAttributes(notification, trace, failureMessage, attrs);
     System.out.println(ServiceMessage.asString(ServiceMessageTypes.TEST_FAILED, attrs));
     System.out.println("\n##teamcity[testFinished name=\'" + escapeName(methodName) + "\']");
   }
@@ -131,5 +137,13 @@ public class IDEATestNGRemoteListener implements ISuiteListener, IResultListener
     if (myCurrentClassName != null) {
       System.out.println("##teamcity[testSuiteFinished name=\'" + escapeName(myCurrentClassName) + "\']");
     }
+  }
+
+  protected static String getShortName(String fqName) {
+    int lastPointIdx = fqName.lastIndexOf('.');
+    if (lastPointIdx >= 0) {
+      return fqName.substring(lastPointIdx + 1);
+    }
+    return fqName;
   }
 }
