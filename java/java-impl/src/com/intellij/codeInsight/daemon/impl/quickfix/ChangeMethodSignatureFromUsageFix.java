@@ -243,6 +243,7 @@ public class ChangeMethodSignatureFromUsageFix implements IntentionAction/*, Hig
           UndoUtil.markPsiFileForUndo(file);
         }
       });
+      return Arrays.asList(newParametersInfo);
     }
     else {
       final List<ParameterInfoImpl> parameterInfos = newParametersInfo != null
@@ -252,9 +253,8 @@ public class ChangeMethodSignatureFromUsageFix implements IntentionAction/*, Hig
       JavaChangeSignatureDialog dialog = JavaChangeSignatureDialog.createAndPreselectNew(project, method, parameterInfos, allowDelegation, refExpr);
       dialog.setParameterInfos(parameterInfos);
       dialog.show();
-      return dialog.getParameters();
+      return dialog.isOK() ? dialog.getParameters() : null;
     }
-    return null;
   }
 
   public static String getNewParameterNameByOldIndex(int oldIndex, final ParameterInfoImpl[] parametersInfo) {
