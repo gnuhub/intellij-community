@@ -16,6 +16,7 @@
 package com.intellij.execution;
 
 import com.intellij.ExtensionPoints;
+import com.intellij.debugger.impl.GenericDebuggerRunnerSettings;
 import com.intellij.execution.configurations.*;
 import com.intellij.execution.process.OSProcessHandler;
 import com.intellij.execution.process.ProcessAdapter;
@@ -201,12 +202,31 @@ public abstract class JavaTestFrameworkRunnableState<T extends ModuleBasedConfig
     return javaParameters;
   }
 
-  protected ServerSocket myForkSocket;
+  private ServerSocket myForkSocket = null;
+
+  @Nullable
+  public ServerSocket getForkSocket() {
+    if (myForkSocket == null && (!Comparing.strEqual(getForkMode(), "none") || forkPerModule()) && getRunnerSettings() != null) {
+      try {
+        myForkSocket = new ServerSocket(0, 0, InetAddress.getByName("127.0.0.1"));
+      }
+      catch (IOException e) {
+        LOG.error(e);
+      }
+    }
+    return myForkSocket;
+  }
+
+  private boolean isExecutorDisabledInForkedMode() {
+    final RunnerSettings settings = getRunnerSettings();
+    return settings != null && !(settings instanceof GenericDebuggerRunnerSettings);
+  }
+
   protected void appendForkInfo(Executor executor) throws ExecutionException {
     final String forkMode = getForkMode();
     if (Comparing.strEqual(forkMode, "none")) {
       if (forkPerModule()) {
-        if (getRunnerSettings() != null) {
+        if (isExecutorDisabledInForkedMode()) {
           final String actionName = UIUtil.removeMnemonic(executor.getStartActionText());
           throw new CantRunException("'" + actionName + "' is disabled when per-module working directory is configured.<br/>" +
                                      "Please specify single working directory, or change test scope to single module.");
@@ -214,7 +234,7 @@ public abstract class JavaTestFrameworkRunnableState<T extends ModuleBasedConfig
       } else {
         return;
       }
-    } else if (getRunnerSettings() != null) {
+    } else if (isExecutorDisabledInForkedMode()) {
       final String actionName = executor.getActionName();
       throw new CantRunException(actionName + " is disabled in fork mode.<br/>Please change fork mode to &lt;none&gt; to " + actionName.toLowerCase(
         Locale.ENGLISH) + ".");
@@ -251,9 +271,6 @@ public abstract class JavaTestFrameworkRunnableState<T extends ModuleBasedConfig
         writer.close();
       }
 
-      if (getRunnerSettings() instanceof DebuggingRunnerData) {
-        myForkSocket = new ServerSocket(0, 0, InetAddress.getByName("127.0.0.1"));
-      }
       passForkMode(forkMode, tempFile);
     }
     catch (Exception e) {
