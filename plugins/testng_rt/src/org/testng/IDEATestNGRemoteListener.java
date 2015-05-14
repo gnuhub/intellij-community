@@ -18,7 +18,6 @@ import java.util.*;
  */
 public class IDEATestNGRemoteListener implements ISuiteListener, IResultListener{
 
-  public static final String INVOCATION_NUMBER = "invocation number: ";
   private final PrintStream myPrintStream;
   private final List<String> myCurrentSuites = new ArrayList<String>();
   private String myMethodName;
@@ -53,22 +52,51 @@ public class IDEATestNGRemoteListener implements ISuiteListener, IResultListener
   public synchronized void onConfigurationSkip(ITestResult itr) {}
 
   public synchronized void onTestStart(ITestResult result) {
-    onTestStart(getTestHierarchy(result), getMethodName(result, true));
+    final String testMethodName = getTestMethodName(result);
+    final Object[] parameters = result.getParameters();
+    if (!testMethodName.equals(myMethodName)) {
+      myInvocationCount = 0;
+      myMethodName = testMethodName;
+    }
+    Integer invocationCount = myMap.get(result);
+    if (invocationCount == null) {
+      invocationCount = myInvocationCount;
+      myMap.put(result, invocationCount);
+    }
+    final String paramString = parameters.length > 0 || invocationCount > 0 
+                               ? "[" + getParamsSpace(invocationCount, parameters) + getParamsString(parameters) + "]" 
+                               : null;
+    onTestStart(getTestHierarchy(result), testMethodName,
+                paramString, invocationCount);
+    myInvocationCount++;
+  }
+
+  public static String getParamsSpace(Integer invocationCount, Object[] parameters) {
+    if (invocationCount > 0) {
+      return invocationCount + (parameters.length > 0 ? " " : "");
+    }
+    return "";
   }
 
   public synchronized void onTestSuccess(ITestResult result) {
-    onTestFinished(getMethodName(result));
+    onTestFinished(getTestMethodNameWithParams(result));
   }
 
   public synchronized void onTestFailure(ITestResult result) {
-    onTestFailure(result.getThrowable(), getMethodName(result));
+    onTestFailure(result.getThrowable(), getTestMethodNameWithParams(result));
   }
 
   public synchronized void onTestSkipped(ITestResult result) {
-    myPrintStream.println("\n##teamcity[testIgnored name=\'" + escapeName(getMethodName(result)) + "\']");
+    myPrintStream.println("\n##teamcity[testIgnored name=\'" + escapeName(getTestMethodNameWithParams(result)) + "\']");
   }
 
-  public synchronized void onTestFailedButWithinSuccessPercentage(ITestResult result) {}
+  public synchronized void onTestFailedButWithinSuccessPercentage(ITestResult result) {
+    final Throwable throwable = result.getThrowable();
+    if (throwable != null) {
+      throwable.printStackTrace();
+    }
+    onTestSuccess(result);
+  }
 
   public synchronized void onStart(ITestContext context) {}
 
@@ -139,13 +167,14 @@ public class IDEATestNGRemoteListener implements ISuiteListener, IResultListener
     myPrintStream.println("##teamcity[testSuiteFinished name=\'" + escapeName(suiteName) + "\']");
   }
 
+  //testOnly
   public void onTestStart(String classFQName, String methodName) {
-    onTestStart(Collections.singletonList(classFQName), methodName);
+    onTestStart(Collections.singletonList(classFQName), methodName, null, -1);
   }
 
-  public void onTestStart(List<String> classFQName, String methodName) {
+  public void onTestStart(List<String> classFQName, String methodName, String paramString, Integer invocationCount) {
     onSuiteStart(classFQName, true);
-    fireTestStarted(methodName, classFQName.get(0));
+    fireTestStarted(methodName, classFQName.get(0), paramString, invocationCount);
   }
   
   public void onTestFinished(String methodName) {
@@ -163,7 +192,7 @@ public class IDEATestNGRemoteListener implements ISuiteListener, IResultListener
     catch (Throwable e) {
       notification = null;
     }
-    ComparisonFailureData.registerSMAttributes(notification, getTrace(ex), failureMessage, attrs);
+    ComparisonFailureData.registerSMAttributes(notification, getTrace(ex), failureMessage, attrs, ex);
     myPrintStream.println(ServiceMessage.asString(ServiceMessageTypes.TEST_FAILED, attrs));
     onTestFinished(methodName);
   }
@@ -177,34 +206,37 @@ public class IDEATestNGRemoteListener implements ISuiteListener, IResultListener
   }
 
   private void fireTestStarted(String methodName, String className) {
-    myPrintStream.println("\n##teamcity[testStarted name=\'" + escapeName(methodName) +
-                          "\' locationHint=\'java:test://" + escapeName(className + "." + methodName) + "\']");
+    fireTestStarted(methodName, className, null, -1);
   }
 
-  private String getMethodName(ITestResult result) {
-    return getMethodName(result, false);
+  private void fireTestStarted(String methodName, String className, String paramString, Integer invocationCount) {
+    myPrintStream.println("\n##teamcity[testStarted name=\'" + escapeName(methodName) + (paramString != null ? paramString : "") +
+                          "\' locationHint=\'java:test://" + escapeName(className + "." + methodName +  ( invocationCount >= 0 ? "[" + invocationCount + "]" : "")) + "\']");
   }
 
-  private String getMethodName(ITestResult result, boolean changeCount) {
+  private synchronized String getTestMethodNameWithParams(ITestResult result) {
     String methodName = getTestMethodName(result);
     final Object[] parameters = result.getParameters();
-    if (!methodName.equals(myMethodName)) {
-      myInvocationCount = 0;
-      myMethodName = methodName;
-    }
-    if (parameters.length > 0) {
-      Integer invocationCount = myMap.get(result);
-      if (invocationCount == null) {
-        invocationCount = myInvocationCount;
-        myMap.put(result, invocationCount);
+    Integer invocationCount = myMap.get(result);
+    if (parameters.length > 0 || invocationCount != null && invocationCount > 0) {
+      methodName += "[";
+      if (invocationCount != null) {
+        methodName +=  getParamsSpace(invocationCount, parameters);
       }
-      
-      methodName += "[" + parameters[0].toString() + " (" + INVOCATION_NUMBER + invocationCount + ")" + "]";
-      if (changeCount) {
-        myInvocationCount++;
-      }
+      methodName += getParamsString(parameters) + "]";
     }
     return methodName;
+  }
+
+  private static String getParamsString(Object[] parameters) {
+    StringBuilder buf = new StringBuilder(); 
+    for (int i = 0; i < parameters.length; i++) {
+      if (i > 0) {
+        buf.append(", ");
+      }
+      buf.append(parameters[i].toString());
+    }
+    return buf.toString();
   }
 
   private static String getTrace(Throwable tr) {
