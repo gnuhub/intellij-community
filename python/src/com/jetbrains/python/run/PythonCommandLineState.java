@@ -45,6 +45,7 @@ import com.intellij.openapi.roots.libraries.PersistentLibraryKind;
 import com.intellij.openapi.util.io.FileUtil;
 import com.intellij.openapi.vfs.JarFileSystem;
 import com.intellij.openapi.vfs.VirtualFile;
+import com.intellij.openapi.vfs.encoding.EncodingProjectManager;
 import com.intellij.remote.RemoteProcessHandlerBase;
 import com.intellij.util.PlatformUtils;
 import com.intellij.util.containers.HashMap;
@@ -149,6 +150,7 @@ public abstract class PythonCommandLineState extends CommandLineState {
     else {
       consoleView.addMessageFilter(new PythonTracebackFilter(project, myConfig.getWorkingDirectory()));
     }
+    consoleView.addMessageFilter(new UrlFilter()); // Url filter is always nice to have
   }
 
   private TextConsoleBuilder createConsoleBuilder(Project project) {
@@ -218,6 +220,8 @@ public abstract class PythonCommandLineState extends CommandLineState {
 
   public GeneralCommandLine generateCommandLine() throws ExecutionException {
     GeneralCommandLine commandLine = createCommandLine();
+
+    commandLine.withCharset(EncodingProjectManager.getInstance(myConfig.getProject()).getDefaultCharset());
 
     setRunnerPath(commandLine);
 

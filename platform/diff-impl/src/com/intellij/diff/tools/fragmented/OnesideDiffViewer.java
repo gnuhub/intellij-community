@@ -135,7 +135,7 @@ public class OnesideDiffViewer extends TextDiffViewerBase {
     List<JComponent> titles = DiffUtil.createTextTitles(myRequest, ContainerUtil.list(myEditor, myEditor));
     OnesideContentPanel contentPanel = new OnesideContentPanel(titles, myEditor);
 
-    myPanel = new OnesideDiffPanel(myProject, contentPanel, myEditor, this, myContext);
+    myPanel = new OnesideDiffPanel(myProject, contentPanel, this, myContext);
 
     myFoldingModel = new MyFoldingModel(myEditor, this);
 
@@ -146,30 +146,34 @@ public class OnesideDiffViewer extends TextDiffViewerBase {
   }
 
   @Override
+  @CalledInAwt
   protected void onInit() {
     super.onInit();
-    processContextHints();
     installTypingSupport();
     myPanel.setLoadingContent(); // We need loading panel only for initial rediff()
   }
 
   @Override
+  @CalledInAwt
   protected void onDispose() {
-    updateContextHints();
-    EditorFactory.getInstance().releaseEditor(myEditor);
     super.onDispose();
+    EditorFactory.getInstance().releaseEditor(myEditor);
   }
 
+  @Override
   @CalledInAwt
   protected void processContextHints() {
+    super.processContextHints();
     Side side = DiffUtil.getUserData(myRequest, myContext, DiffUserDataKeys.MASTER_SIDE);
     if (side != null && side.select(myActualContent1, myActualContent2) != null) myMasterSide = side;
 
     myInitialScrollHelper.processContext(myRequest);
   }
 
+  @Override
   @CalledInAwt
   protected void updateContextHints() {
+    super.updateContextHints();
     myInitialScrollHelper.updateContext(myRequest);
     myFoldingModel.updateContext(myRequest, getFoldingModelSettings());
   }
@@ -377,6 +381,22 @@ public class OnesideDiffViewer extends TextDiffViewerBase {
     myStateIsOutOfDate = false;
     mySuppressEditorTyping = false;
     updateEditorCanBeTyped();
+  }
+
+  @CalledInAwt
+  protected void markSuppressEditorTyping() {
+    mySuppressEditorTyping = true;
+    updateEditorCanBeTyped();
+  }
+
+  @CalledInAwt
+  protected void markStateIsOutOfDate() {
+    myStateIsOutOfDate = true;
+    if (myChangedBlockData != null) {
+      for (OnesideDiffChange diffChange : myChangedBlockData.getDiffChanges()) {
+        diffChange.updateGutterActions();
+      }
+    }
   }
 
   @Nullable
@@ -607,8 +627,7 @@ public class OnesideDiffViewer extends TextDiffViewerBase {
         if (twosideStartLine == -1 || twosideEndLine == -1) {
           // this should never happen
           logDebugInfo(e, onesideStartPosition, onesideEndPosition, twosideStartLine, twosideEndLine);
-          mySuppressEditorTyping = true;
-          updateEditorCanBeTyped();
+          markSuppressEditorTyping();
           return;
         }
 
@@ -626,7 +645,7 @@ public class OnesideDiffViewer extends TextDiffViewerBase {
       finally {
         // TODO: we can avoid marking state out-of-date in some simple cases (like in SimpleDiffViewer)
         // but this will greatly increase complexity, so let's wait if it's actually required by users
-        myStateIsOutOfDate = true;
+        markStateIsOutOfDate();
 
         myFoldingModel.onDocumentChanged(e);
         scheduleRediff();
@@ -669,9 +688,8 @@ public class OnesideDiffViewer extends TextDiffViewerBase {
   protected void onDocumentChange(@NotNull DocumentEvent e) {
     if (myDuringTwosideDocumentModification) return;
 
-    myStateIsOutOfDate = true;
-    mySuppressEditorTyping = true;
-    updateEditorCanBeTyped();
+    markStateIsOutOfDate();
+    markSuppressEditorTyping();
 
     myFoldingModel.onDocumentChanged(e);
     scheduleRediff();
@@ -697,7 +715,7 @@ public class OnesideDiffViewer extends TextDiffViewerBase {
 
     // no need to mark myStateIsOutOfDate - it will be made by DocumentListener
     // TODO: we can apply change manually, without marking state out-of-date. But we'll have to schedule rediff anyway.
-    rediff();
+    scheduleRediff();
   }
 
   //
@@ -1303,19 +1321,9 @@ public class OnesideDiffViewer extends TextDiffViewerBase {
     private boolean doScrollToChange(@NotNull ScrollToPolicy scrollToChangePolicy) {
       if (myChangedBlockData == null) return false;
       List<OnesideDiffChange> changes = myChangedBlockData.getDiffChanges();
-      if (changes.isEmpty()) return false;
 
-      OnesideDiffChange targetChange;
-      switch (scrollToChangePolicy) {
-        case FIRST_CHANGE:
-          targetChange = changes.get(0);
-          break;
-        case LAST_CHANGE:
-          targetChange = changes.get(changes.size() - 1);
-          break;
-        default:
-          throw new IllegalArgumentException(scrollToChangePolicy.name());
-      }
+      OnesideDiffChange targetChange = scrollToChangePolicy.select(changes);
+      if (targetChange == null) return false;
 
       DiffUtil.scrollEditor(myEditor, targetChange.getLine1(), false);
       return true;

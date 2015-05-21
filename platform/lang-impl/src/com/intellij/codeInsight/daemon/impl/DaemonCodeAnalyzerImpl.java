@@ -143,7 +143,7 @@ public class DaemonCodeAnalyzerImpl extends DaemonCodeAnalyzerEx implements Pers
 
     myInitialized = true;
     myDisposed = false;
-    myFileStatusMap.markAllFilesDirty();
+    myFileStatusMap.markAllFilesDirty("DCAI init");
     Disposer.register(this, new Disposable() {
       @Override
       public void dispose() {
@@ -248,7 +248,7 @@ public class DaemonCodeAnalyzerImpl extends DaemonCodeAnalyzerEx implements Pers
 
       Collections.sort(passes, new Comparator<TextEditorHighlightingPass>() {
         @Override
-        public int compare(TextEditorHighlightingPass o1, TextEditorHighlightingPass o2) {
+        public int compare(@NotNull TextEditorHighlightingPass o1, @NotNull TextEditorHighlightingPass o2) {
           if (o1 instanceof GeneralHighlightingPass) return -1;
           if (o2 instanceof GeneralHighlightingPass) return 1;
           return 0;
@@ -371,9 +371,9 @@ public class DaemonCodeAnalyzerImpl extends DaemonCodeAnalyzerEx implements Pers
 
   @TestOnly
   public void cleanupAfterTest() {
-    if (!myProject.isOpen()) return;
-    setUpdateByTimerEnabled(false);
-    waitForTermination();
+    if (myProject.isOpen()) {
+      prepareForTest();
+    }
   }
 
   void waitForTermination() {
@@ -477,7 +477,7 @@ public class DaemonCodeAnalyzerImpl extends DaemonCodeAnalyzerEx implements Pers
 
   @Override
   public void restart() {
-    myFileStatusMap.markAllFilesDirty();
+    myFileStatusMap.markAllFilesDirty("Global restart");
     stopProcess(true, "Global restart");
   }
 
@@ -485,8 +485,9 @@ public class DaemonCodeAnalyzerImpl extends DaemonCodeAnalyzerEx implements Pers
   public void restart(@NotNull PsiFile file) {
     Document document = myPsiDocumentManager.getCachedDocument(file);
     if (document == null) return;
-    myFileStatusMap.markFileScopeDirty(document, new TextRange(0, document.getTextLength()), file.getTextLength());
-    stopProcess(true, "Psi file restart");
+    String reason = "Psi file restart: " + file.getName();
+    myFileStatusMap.markFileScopeDirty(document, new TextRange(0, document.getTextLength()), file.getTextLength(), reason);
+    stopProcess(true, reason);
   }
 
   @NotNull

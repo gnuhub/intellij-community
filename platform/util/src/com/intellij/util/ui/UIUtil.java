@@ -708,7 +708,7 @@ public class UIUtil {
 
   private static final Map<Class, Ref<Method>> ourDefaultIconMethodsCache = new ConcurrentHashMap<Class, Ref<Method>>();
   public static int getCheckBoxTextHorizontalOffset(@NotNull JCheckBox cb) {
-    // logic copied from javax.swing.plaf.basic.BasicRadioButtonUI.paint 
+    // logic copied from javax.swing.plaf.basic.BasicRadioButtonUI.paint
     ButtonUI ui = cb.getUI();
     String text = cb.getText();
 
@@ -1761,6 +1761,10 @@ public class UIUtil {
     return image;
   }
 
+  /** This method is intended to use when user settings are not accessible yet.
+   *  Use it to set up default RenderingHints.
+   *  @param g
+   */
   public static void applyRenderingHints(final Graphics g) {
     Graphics2D g2d = (Graphics2D)g;
     Toolkit tk = Toolkit.getDefaultToolkit();

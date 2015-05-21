@@ -15,6 +15,8 @@
  */
 package com.intellij.psi.impl;
 
+import com.intellij.openapi.roots.FileIndexFacade;
+import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.pom.java.LanguageLevel;
 import com.intellij.psi.*;
 import com.intellij.psi.search.GlobalSearchScope;
@@ -99,6 +101,16 @@ class TypeCorrector extends PsiTypeMapper {
       return psiClass;
     }
 
+    final VirtualFile vFile = file.getVirtualFile();
+    if (vFile == null) {
+      return psiClass;
+    }
+    
+    final FileIndexFacade index = FileIndexFacade.getInstance(file.getProject());
+    if (!index.isInSource(vFile) && !index.isInLibrarySource(vFile) && !index.isInLibraryClasses(vFile)) {
+      return psiClass;
+    }
+
     return JavaPsiFacade.getInstance(psiClass.getProject()).findClass(qualifiedName, myResolveScope);
   }
 
@@ -108,8 +120,12 @@ class TypeCorrector extends PsiTypeMapper {
     PsiTypeParameter[] originalTypeParameters = originalClass.getTypeParameters();
     if (typeParameters.length != originalTypeParameters.length) return substitutor;
 
+    Map<PsiTypeParameter, PsiType> substitutionMap = substitutor.getSubstitutionMap();
+
     PsiSubstitutor mappedSubstitutor = PsiSubstitutor.EMPTY;
     for (int i = 0; i < originalTypeParameters.length; i++) {
+      if (!substitutionMap.containsKey(originalTypeParameters[i])) continue;
+
       PsiType originalSubstitute = substitutor.substitute(originalTypeParameters[i]);
       if (originalSubstitute != null) {
         PsiType substitute = mapType(originalSubstitute);
