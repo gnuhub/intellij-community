@@ -78,8 +78,17 @@ public class SingleRootFileViewProvider extends UserDataHolderBase implements Fi
     this(manager, file, true);
   }
 
-  public SingleRootFileViewProvider(@NotNull PsiManager manager, @NotNull VirtualFile virtualFile, final boolean eventSystemEnabled) {
-    this(manager, virtualFile, eventSystemEnabled, calcBaseLanguage(virtualFile, manager.getProject()));
+  public SingleRootFileViewProvider(@NotNull PsiManager manager,
+                                    @NotNull VirtualFile virtualFile,
+                                    final boolean eventSystemEnabled) {
+    this(manager, virtualFile, eventSystemEnabled, virtualFile.getFileType());
+  }
+
+  public SingleRootFileViewProvider(@NotNull PsiManager manager,
+                                    @NotNull VirtualFile virtualFile,
+                                    final boolean eventSystemEnabled,
+                                    final FileType fileType) {
+    this(manager, virtualFile, eventSystemEnabled, calcBaseLanguage(virtualFile, manager.getProject(), fileType));
   }
 
   protected SingleRootFileViewProvider(@NotNull PsiManager manager, @NotNull VirtualFile virtualFile, final boolean eventSystemEnabled, @NotNull Language language) {
@@ -99,7 +108,7 @@ public class SingleRootFileViewProvider extends UserDataHolderBase implements Fi
     return myBaseLanguage;
   }
 
-  private static Language calcBaseLanguage(@NotNull VirtualFile file, @NotNull Project project) {
+  private static Language calcBaseLanguage(@NotNull VirtualFile file, @NotNull Project project, @NotNull final FileType fileType) {
     if (file instanceof LightVirtualFile) {
       final Language language = ((LightVirtualFile)file).getLanguage();
       if (language != null) {
@@ -107,7 +116,6 @@ public class SingleRootFileViewProvider extends UserDataHolderBase implements Fi
       }
     }
 
-    FileType fileType = file.getFileType();
     if (fileType.isBinary()) return Language.ANY;
     if (isTooLargeForIntelligence(file)) return PlainTextLanguage.INSTANCE;
 
@@ -165,10 +173,6 @@ public class SingleRootFileViewProvider extends UserDataHolderBase implements Fi
 
   @Override
   public void contentsSynchronized() {
-    unsetPsiContent();
-  }
-
-  private void unsetPsiContent() {
     if (!(myContent instanceof PsiFileContent)) return;
     setContent(new VirtualFileContent());
   }
@@ -452,14 +456,18 @@ public class SingleRootFileViewProvider extends UserDataHolderBase implements Fi
   }
 
   private void setContent(@NotNull Content content) {
-    // temporarily commented
-    //if (myPhysical) {
-    //  final Content oldContent = myContent;
-    //  if (oldContent != null && content.getModificationStamp() != oldContent.getModificationStamp()) {
-    //    ApplicationManager.getApplication().assertWriteAccessAllowed();
-    //  }
-    //}
+    Content prevContent = myContent;
     myContent = content;
+    if (prevContent instanceof PsiFileContent && content instanceof VirtualFileContent) {
+      int fileLength = content.getText().length();
+      for (FileElement fileElement : getKnownTreeRoots()) {
+        int nodeLength = fileElement.getTextLength();
+        if (nodeLength != fileLength) {
+          LOG.error("Inconsistent " + fileElement.getElementType() + " tree in " + this + "; nodeLength=" + nodeLength + "; fileLength=" + fileLength);
+        }
+      }
+    }
+    
   }
 
   @NonNls
