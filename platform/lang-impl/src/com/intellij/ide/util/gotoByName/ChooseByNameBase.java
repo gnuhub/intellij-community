@@ -81,10 +81,7 @@ import com.intellij.util.containers.ContainerUtil;
 import com.intellij.util.indexing.FileBasedIndex;
 import com.intellij.util.text.Matcher;
 import com.intellij.util.text.MatcherHolder;
-import com.intellij.util.ui.AsyncProcessIcon;
-import com.intellij.util.ui.EmptyIcon;
-import com.intellij.util.ui.GraphicsUtil;
-import com.intellij.util.ui.UIUtil;
+import com.intellij.util.ui.*;
 import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -278,9 +275,14 @@ public abstract class ChooseByNameBase {
 
     @Override
     public Object getData(String dataId) {
+      if (PlatformDataKeys.SEARCH_INPUT_TEXT.is(dataId)) {
+        return myTextField == null ? null : myTextField.getText();
+      }
+
       if (PlatformDataKeys.HELP_ID.is(dataId)) {
         return myModel.getHelpId();
       }
+
       if (myCalcElementsThread != null) {
         return null;
       }
@@ -699,7 +701,7 @@ public abstract class ChooseByNameBase {
     });
 
     myListScrollPane = ScrollPaneFactory.createScrollPane(myList);
-    myListScrollPane.setViewportBorder(new EmptyBorder(0, 0, 0, 0));
+    myListScrollPane.setViewportBorder(JBUI.Borders.empty());
 
     myTextFieldPanel.setBorder(new EmptyBorder(2, 2, 2, 2));
 
