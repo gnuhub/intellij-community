@@ -18,7 +18,7 @@ package com.intellij.peer.impl;
 import com.intellij.openapi.actionSystem.AnActionEvent;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.vcs.FilePath;
-import com.intellij.openapi.vcs.FilePathImpl;
+import com.intellij.openapi.vcs.LocalFilePath;
 import com.intellij.openapi.vcs.RemoteFilePath;
 import com.intellij.openapi.vcs.actions.VcsContext;
 import com.intellij.openapi.vcs.actions.VcsContextFactory;
@@ -32,28 +32,31 @@ import org.jetbrains.annotations.NotNull;
 
 import java.io.File;
 
-/**
- * @author yole
-*/
 public class VcsContextFactoryImpl implements VcsContextFactory {
-  public VcsContext createCachedContextOn(AnActionEvent event) {
+
+  @NotNull
+  public VcsContext createCachedContextOn(@NotNull AnActionEvent event) {
     return VcsContextWrapper.createCachedInstanceOn(event);
   }
 
-  public VcsContext createContextOn(final AnActionEvent event) {
+  @NotNull
+  public VcsContext createContextOn(@NotNull AnActionEvent event) {
     return new VcsContextWrapper(event.getDataContext(), event.getModifiers(), event.getPlace(), event.getPresentation().getText());
   }
 
-  public FilePath createFilePathOn(@NotNull final VirtualFile virtualFile) {
-    return new FilePathImpl(virtualFile.getPath(), virtualFile.isDirectory());
+  @NotNull
+  public FilePath createFilePathOn(@NotNull VirtualFile virtualFile) {
+    return createFilePath(virtualFile.getPath(), virtualFile.isDirectory());
   }
 
-  public FilePath createFilePathOn(final File file) {
+  @NotNull
+  public FilePath createFilePathOn(@NotNull final File file) {
     VirtualFile vf = LocalFileSystem.getInstance().findFileByIoFile(file);
-    return vf != null ? createFilePathOn(vf) : new FilePathImpl(file.getPath(), file.isDirectory());
+    return vf != null ? createFilePathOn(vf) : createFilePath(file.getPath(), file.isDirectory());
   }
 
-  public FilePath createFilePathOn(final File file, final NotNullFunction<File, Boolean> detector) {
+  @NotNull
+  public FilePath createFilePathOn(@NotNull final File file, @NotNull final NotNullFunction<File, Boolean> detector) {
     VirtualFile virtualFile = LocalFileSystem.getInstance().findFileByIoFile(file);
     if (virtualFile != null) {
       return createFilePathOn(virtualFile);
@@ -61,16 +64,18 @@ public class VcsContextFactoryImpl implements VcsContextFactory {
     return createFilePathOn(file, detector.fun(file).booleanValue());
   }
 
-  public FilePath createFilePathOn(final File file, final boolean isDirectory) {
-    return new FilePathImpl(file.getPath(), isDirectory);
+  @NotNull
+  public FilePath createFilePathOn(@NotNull final File file, final boolean isDirectory) {
+    return createFilePath(file.getPath(), isDirectory);
   }
 
   @NotNull
-  public FilePath createFilePathOnNonLocal(final String path, final boolean isDirectory) {
+  public FilePath createFilePathOnNonLocal(@NotNull final String path, final boolean isDirectory) {
     return new RemoteFilePath(path, isDirectory);
   }
 
-  public FilePath createFilePathOnDeleted(final File file, final boolean isDirectory) {
+  @NotNull
+  public FilePath createFilePathOnDeleted(@NotNull final File file, final boolean isDirectory) {
     return createFilePathOn(file, isDirectory);
   }
 
@@ -82,16 +87,17 @@ public class VcsContextFactoryImpl implements VcsContextFactory {
   @NotNull
   @Override
   public FilePath createFilePath(@NotNull VirtualFile parent, @NotNull String fileName, boolean isDirectory) {
-    return new FilePathImpl(parent.getPath() + "/" + fileName, isDirectory);
+    return createFilePath(parent.getPath() + "/" + fileName, isDirectory);
   }
 
-  public LocalChangeList createLocalChangeList(Project project, @NotNull final String name) {
+  @NotNull
+  public LocalChangeList createLocalChangeList(@NotNull Project project, @NotNull final String name) {
     return LocalChangeListImpl.createEmptyChangeListImpl(project, name);
   }
 
   @NotNull
   @Override
   public FilePath createFilePath(@NotNull String path, boolean isDirectory) {
-    return new FilePathImpl(path, isDirectory);
+    return new LocalFilePath(path, isDirectory);
   }
 }
