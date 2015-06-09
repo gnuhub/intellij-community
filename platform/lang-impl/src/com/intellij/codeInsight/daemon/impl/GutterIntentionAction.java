@@ -23,11 +23,13 @@ import com.intellij.openapi.editor.Editor;
 import com.intellij.openapi.editor.ex.EditorEx;
 import com.intellij.openapi.editor.ex.RangeHighlighterEx;
 import com.intellij.openapi.editor.markup.GutterIconRenderer;
+import com.intellij.openapi.keymap.KeymapUtil;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.ui.popup.JBPopupFactory;
 import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.psi.PsiFile;
 import com.intellij.ui.awt.RelativePoint;
+import com.intellij.util.ArrayUtil;
 import com.intellij.util.IconUtil;
 import com.intellij.util.IncorrectOperationException;
 import org.jetbrains.annotations.NotNull;
@@ -42,10 +44,12 @@ import java.util.List;
  */
 class GutterIntentionAction extends AbstractIntentionAction implements Comparable<IntentionAction> {
   private final AnAction myAction;
+  private final int myOrder;
   private String myText;
 
-  private GutterIntentionAction(AnAction action) {
+  private GutterIntentionAction(AnAction action, int order) {
     myAction = action;
+    myOrder = order;
   }
 
   @Override
@@ -65,6 +69,15 @@ class GutterIntentionAction extends AbstractIntentionAction implements Comparabl
       myText = event.getPresentation().getText();
       if (myText == null) myText = myAction.getTemplatePresentation().getText();
       if (myText == null) myText = "";
+      else {
+        ShortcutSet shortcutSet = myAction.getShortcutSet();
+        Shortcut[] shortcuts = shortcutSet.getShortcuts();
+        Shortcut element = ArrayUtil.getFirstElement(shortcuts);
+        if (element != null) {
+          String text = KeymapUtil.getShortcutText(element);
+          myText += " (" + text + ")";
+        }
+      }
     }
     return StringUtil.isNotEmpty(myText);
   }
@@ -81,25 +94,26 @@ class GutterIntentionAction extends AbstractIntentionAction implements Comparabl
     if (renderer == null) {
       return;
     }
-    addActions(renderer.getClickAction(), descriptors, renderer);
-    addActions(renderer.getMiddleButtonClickAction(), descriptors, renderer);
-    addActions(renderer.getRightButtonClickAction(), descriptors, renderer);
-    addActions(renderer.getPopupMenuActions(), descriptors, renderer);
+    addActions(renderer.getClickAction(), descriptors, renderer, 0);
+    addActions(renderer.getMiddleButtonClickAction(), descriptors, renderer, 0);
+    addActions(renderer.getRightButtonClickAction(), descriptors, renderer, 0);
+    addActions(renderer.getPopupMenuActions(), descriptors, renderer, 0);
   }
 
   private static void addActions(AnAction action,
                                  List<HighlightInfo.IntentionActionDescriptor> descriptors,
-                                 GutterIconRenderer renderer) {
+                                 GutterIconRenderer renderer, int order) {
     if (action == null) {
       return;
     }
     if (action instanceof ActionGroup) {
       AnAction[] children = ((ActionGroup)action).getChildren(null);
-      for (AnAction child : children) {
-        addActions(child, descriptors, renderer);
+      for (int i = 0; i < children.length; i++) {
+        AnAction child = children[i];
+        addActions(child, descriptors, renderer, i + order);
       }
     }
-    final IntentionAction actionAdapter = new GutterIntentionAction(action);
+    final IntentionAction actionAdapter = new GutterIntentionAction(action, order);
     Icon icon = action.getTemplatePresentation().getIcon();
     if (icon == null) icon = renderer.getIcon();
     if (icon.getIconWidth() < 16) icon = IconUtil.toSize(icon, 16, 16);
@@ -118,13 +132,7 @@ class GutterIntentionAction extends AbstractIntentionAction implements Comparabl
   @Override
   public int compareTo(IntentionAction o) {
     if (o instanceof GutterIntentionAction) {
-      AnAction other = ((GutterIntentionAction)o).myAction;
-      if (myAction instanceof Comparable) {
-        return ((Comparable)myAction).compareTo(other);
-      }
-      else if (other instanceof Comparable) {
-        return -((Comparable)other).compareTo(myAction);
-      }
+      return myOrder - ((GutterIntentionAction)o).myOrder;
     }
     return 0;
   }

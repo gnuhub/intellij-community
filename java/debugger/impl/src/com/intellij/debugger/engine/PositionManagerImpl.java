@@ -150,7 +150,7 @@ public class PositionManagerImpl implements PositionManager, MultiRequestPositio
       }
     }
 
-    Method method = location.method();
+    final Method method = location.method();
 
     if (psiFile instanceof PsiCompiledElement || lineNumber < 0) {
       final String methodSignature = method.signature();
@@ -195,7 +195,12 @@ public class PositionManagerImpl implements PositionManager, MultiRequestPositio
             return LambdaMethodFilter.getLambdaOrdinal(o1.method().name()) - LambdaMethodFilter.getLambdaOrdinal(o2.method().name());
           }
         });
-        lambdaOrdinal = lambdas.indexOf(location);
+        lambdaOrdinal = ContainerUtil.indexOf(lambdas, new Condition<Location>() {
+          @Override
+          public boolean value(Location location) {
+            return location.method().equals(method);
+          }
+        });
       }
     }
     return new JavaSourcePosition(sourcePosition, location.declaringType(), method, lambdaOrdinal);
@@ -226,10 +231,9 @@ public class PositionManagerImpl implements PositionManager, MultiRequestPositio
         else if ((method instanceof PsiMethod && myExpectedMethodName.equals(((PsiMethod)method).getName()))) {
           if (insideBody(element, ((PsiMethod)method).getBody())) return element;
         }
-        //else if (method instanceof PsiLambdaExpression && (myLambdaOrdinal < 0 || myLambdaOrdinal == lambdaOrdinal)
-        //         && LambdaMethodFilter.isLambdaName(myExpectedMethodName)) {
-        //  if (insideBody(element, ((PsiLambdaExpression)method).getBody())) return element;
-        //}
+        else if (method instanceof PsiLambdaExpression && LambdaMethodFilter.isLambdaName(myExpectedMethodName)) {
+          if (insideBody(element, ((PsiLambdaExpression)method).getBody())) return element;
+        }
       }
       return null;
     }
@@ -265,11 +269,6 @@ public class PositionManagerImpl implements PositionManager, MultiRequestPositio
             }
             while(true);
             final List<PsiLambdaExpression> lambdas = new ArrayList<PsiLambdaExpression>(3);
-            // add initial lambda if we're inside already
-            NavigatablePsiElement method = PsiTreeUtil.getParentOfType(element, PsiMethod.class, PsiLambdaExpression.class);
-            if (method instanceof PsiLambdaExpression) {
-              lambdas.add((PsiLambdaExpression)method);
-            }
             final PsiElementVisitor lambdaCollector = new JavaRecursiveElementVisitor() {
               @Override
               public void visitLambdaExpression(PsiLambdaExpression expression) {
@@ -278,6 +277,11 @@ public class PositionManagerImpl implements PositionManager, MultiRequestPositio
               }
             };
             element.accept(lambdaCollector);
+            // add initial lambda if we're inside already
+            NavigatablePsiElement method = PsiTreeUtil.getParentOfType(element, PsiMethod.class, PsiLambdaExpression.class);
+            if (method instanceof PsiLambdaExpression) {
+              lambdas.add((PsiLambdaExpression)method);
+            }
             for (PsiElement sibling = getNextElement(element); sibling != null; sibling = getNextElement(sibling)) {
               if (!lineRange.intersects(sibling.getTextRange())) {
                 break;

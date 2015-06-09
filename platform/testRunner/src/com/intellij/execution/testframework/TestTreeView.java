@@ -30,10 +30,7 @@ import com.intellij.openapi.ide.CopyPasteManager;
 import com.intellij.openapi.ui.GraphicsConfig;
 import com.intellij.openapi.util.Disposer;
 import com.intellij.psi.PsiElement;
-import com.intellij.ui.ColorUtil;
-import com.intellij.ui.ExpandableItemsHandler;
-import com.intellij.ui.PopupHandler;
-import com.intellij.ui.TreeSpeedSearch;
+import com.intellij.ui.*;
 import com.intellij.ui.treeStructure.Tree;
 import com.intellij.util.EditSourceOnDoubleClickHandler;
 import com.intellij.util.containers.Convertor;
@@ -188,7 +185,9 @@ public abstract class TestTreeView extends Tree implements DataProvider, CopyPro
   @Override
   public void paint(Graphics g) {
     super.paint(g);
-    final TestConsoleProperties properties = myModel.getProperties();
+    final TestFrameworkRunningModel model = myModel;
+    if (model == null) return;
+    final TestConsoleProperties properties = model.getProperties();
     if (TestConsoleProperties.SHOW_INLINE_STATISTICS.value(properties)) {
       Rectangle visibleRect = getVisibleRect();
       Rectangle clip = g.getClipBounds();
@@ -196,18 +195,18 @@ public abstract class TestTreeView extends Tree implements DataProvider, CopyPro
         if (isExpandableHandlerVisibleForCurrentRow(row)) {
           continue;
         }
-        Rectangle rowBounds = getRowBounds(row);
-        rowBounds.x = 0;
-        rowBounds.width = Integer.MAX_VALUE;
+        Object node = getPathForRow(row).getLastPathComponent();
+        if (node instanceof DefaultMutableTreeNode) {
+          Object data = ((DefaultMutableTreeNode)node).getUserObject();
+          if (data instanceof BaseTestProxyNodeDescriptor) {
+            final AbstractTestProxy testProxy = ((BaseTestProxyNodeDescriptor)data).getElement();
+            final String durationString = testProxy.getDurationString(properties);
+            if (durationString != null) {
+              Rectangle rowBounds = getRowBounds(row);
+              rowBounds.x = 0;
+              rowBounds.width = Integer.MAX_VALUE;
 
-        if (rowBounds.intersects(clip)) {
-          Object node = getPathForRow(row).getLastPathComponent();
-          if (node instanceof DefaultMutableTreeNode) {
-            Object data = ((DefaultMutableTreeNode)node).getUserObject();
-            if (data instanceof BaseTestProxyNodeDescriptor) {
-              final AbstractTestProxy testProxy = ((BaseTestProxyNodeDescriptor)data).getElement();
-              final String durationString = testProxy.getDurationString(properties);
-              if (durationString != null) {
+              if (rowBounds.intersects(clip)) {
                 final Rectangle fullRowRect = new Rectangle(visibleRect.x, rowBounds.y, visibleRect.width, rowBounds.height);
                 final boolean rowSelected = isRowSelected(row);
                 final boolean hasTreeFocus = hasFocus();
@@ -230,8 +229,18 @@ public abstract class TestTreeView extends Tree implements DataProvider, CopyPro
     final int leftOffset = 5;
     g.fillRect(x - leftOffset, bounds.y, totalWidth + leftOffset, bounds.height);
     g.translate(0, bounds.y - 1);
-    g.setColor(isSelected ? UIUtil.getTreeSelectionForeground() : ColorUtil.dimmer(UIUtil.getTreeForeground()));
-    g.drawString(duration, x, (int)metrics.getMaxCharBounds(g).getHeight());
+    if (isSelected) {
+      if (!hasFocus && UIUtil.isUnderAquaBasedLookAndFeel()) {
+        g.setColor(UIUtil.getTreeForeground());
+      }
+      else {
+        g.setColor(UIUtil.getTreeSelectionForeground());
+      }
+    }
+    else {
+      g.setColor(new JBColor(0x808080, 0x808080));
+    }
+    g.drawString(duration, x, SimpleColoredComponent.getTextBaseLine(tree.getFontMetrics(tree.getFont()), bounds.height) + 1);
     g.translate(0, -bounds.y + 1);
     config.restore();
   }

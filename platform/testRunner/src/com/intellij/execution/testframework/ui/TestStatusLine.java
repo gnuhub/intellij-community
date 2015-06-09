@@ -16,15 +16,15 @@
 package com.intellij.execution.testframework.ui;
 
 import com.intellij.execution.ExecutionBundle;
-import com.intellij.ide.ui.laf.darcula.ui.DarculaProgressBarUI;
 import com.intellij.openapi.progress.util.ColorProgressBar;
 import com.intellij.openapi.util.text.StringUtil;
+import com.intellij.ui.JBProgressBar;
 import com.intellij.ui.SimpleColoredComponent;
 import com.intellij.ui.SimpleTextAttributes;
-import com.intellij.util.ui.UIUtil;
+import com.intellij.util.ui.JBDimension;
+import com.intellij.util.ui.JBEmptyBorder;
 
 import javax.swing.*;
-import javax.swing.plaf.ProgressBarUI;
 import java.awt.*;
 
 /**
@@ -34,19 +34,22 @@ public class TestStatusLine extends JPanel {
   private static final SimpleTextAttributes IGNORE_ATTRIBUTES = new SimpleTextAttributes(SimpleTextAttributes.STYLE_PLAIN, ColorProgressBar.YELLOW);
   private static final SimpleTextAttributes ERROR_ATTRIBUTES = new SimpleTextAttributes(SimpleTextAttributes.STYLE_PLAIN, ColorProgressBar.RED);
 
-  protected final JProgressBar myProgressBar = new MyProgressBar();
+  protected final JProgressBar myProgressBar = new JBProgressBar();
   protected final SimpleColoredComponent myState = new SimpleColoredComponent();
 
   public TestStatusLine() {
-    super(new GridLayout(1, 2));
-    final JPanel progressPanel = new JPanel(new GridBagLayout());
-    add(progressPanel);
+    super(new BorderLayout());
+    JPanel progressPanel = new JPanel(new GridBagLayout());
+    add(progressPanel, BorderLayout.WEST);
     myProgressBar.setMaximum(100);
-    myProgressBar.setBorder(null);
+    final Dimension size = new JBDimension(450, -1);
+    progressPanel.setMaximumSize(size);
+    progressPanel.setMinimumSize(size);
+    progressPanel.setPreferredSize(size);
     progressPanel.add(myProgressBar, new GridBagConstraints(0, 0, 0, 0, 1, 1, GridBagConstraints.CENTER, GridBagConstraints.HORIZONTAL,
-                                                            new Insets(0, 0, 0, 0), 0, 0));
+                                                            new Insets(2, 2, 0, 8), 0, 0));
     setStatusColor(ColorProgressBar.GREEN);
-    add(myState);
+    add(myState, BorderLayout.CENTER);
     myState.append(ExecutionBundle.message("junit.runing.info.starting.label"));
   }
 
@@ -88,7 +91,7 @@ public class TestStatusLine extends JPanel {
       myState.append(result + " done: ");
       appendFailuresAndIgnores(failuresCount, ignoredTestsCount);
     }
-    myState.append(" - " + StringUtil.formatDuration(duration), SimpleTextAttributes.GRAY_ATTRIBUTES);
+    myState.append(" – " + StringUtil.formatDuration(duration), SimpleTextAttributes.GRAY_ATTRIBUTES);
   }
 
   private static String getTestsTotalMessage(int testsTotal) {
@@ -123,21 +126,5 @@ public class TestStatusLine extends JPanel {
   public void setText(String progressStatus_text) {
     myState.clear();
     myState.append(progressStatus_text);
-  }
-
-  private static class MyProgressBar extends JProgressBar {
-    private static final int NATIVE_LAF_HEIGHT = 12;
-
-    @Override
-    public void setUI(ProgressBarUI ui) {
-      boolean nativeLaf = UIUtil.isUnderWindowsLookAndFeel() || UIUtil.isUnderAquaLookAndFeel() || UIUtil.isUnderGTKLookAndFeel();
-      if (nativeLaf) {
-        ui = new DarculaProgressBarUI();
-      }
-      super.setUI(ui);
-      if (nativeLaf) {
-        setPreferredSize(new Dimension(getPreferredSize().width, NATIVE_LAF_HEIGHT));
-      }
-    }
   }
 }

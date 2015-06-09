@@ -21,6 +21,7 @@ import junit.framework.Assert;
 import org.junit.Test;
 import org.junit.runner.Description;
 import org.junit.runner.Result;
+import org.junit.runner.notification.Failure;
 
 import java.io.IOException;
 import java.io.OutputStream;
@@ -220,6 +221,40 @@ public class JUnitTreeByDescriptionHierarchyTest {
   }
 
   @Test
+  public void testSetupClassFailure() throws Exception {
+    final Description root = Description.createSuiteDescription("root");
+    final Description testA = Description.createSuiteDescription("TestA");
+    root.addChild(testA);
+    final Description testName = Description.createTestDescription("TestA", "testName");
+    testA.addChild(testName);
+
+    final StringBuffer buf = new StringBuffer();
+    final JUnit4TestListener sender = createListener(buf);
+    sender.sendTree(root);
+
+    Assert.assertEquals("output: " + buf, "##teamcity[suiteTreeStarted name='TestA' locationHint='java:suite://TestA']\n" +
+                                          "##teamcity[suiteTreeNode name='testName' locationHint='java:test://TestA.testName']\n" +
+                                          "##teamcity[suiteTreeEnded name='TestA']\n", StringUtil.convertLineSeparators(buf.toString()));
+
+    buf.setLength(0);
+
+    sender.testRunStarted(testA);
+    final Exception exception = new Exception();
+    exception.setStackTrace(new StackTraceElement[0]);
+    sender.testAssumptionFailure(new Failure(testA, exception));
+    sender.testRunFinished(new Result());
+
+    Assert.assertEquals("output: " + buf, "##teamcity[enteredTheMatrix]\n" +
+                                          "##teamcity[rootName name = 'root' location = 'java:suite://root']\n" +
+                                          "##teamcity[testSuiteStarted name='TestA']\n" +
+                                          "##teamcity[testStarted name='testName' locationHint='java:test://TestA.testName']\n" +
+                                          "##teamcity[testIgnored name='testName' details='java.lang.Exception|n' error='true' message='']\n" +
+                                          "\n" +
+                                          "##teamcity[testFinished name='testName']\n" +
+                                          "##teamcity[testSuiteFinished name='TestA']\n", StringUtil.convertLineSeparators(buf.toString()));
+  }
+
+  @Test
   public void testSingleMethod() throws Exception {
     final Description rootDescription = Description.createTestDescription("TestA", "testName");
     doTest(rootDescription, Collections.singletonList(rootDescription), 
@@ -276,6 +311,11 @@ public class JUnitTreeByDescriptionHierarchyTest {
       @Override
       protected long currentTime() {
         return 0;
+      }
+
+      @Override
+      protected String getTrace(Failure failure) {
+        return StringUtil.convertLineSeparators(super.getTrace(failure));
       }
     };
   }

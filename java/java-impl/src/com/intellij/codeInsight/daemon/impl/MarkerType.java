@@ -24,7 +24,11 @@ import com.intellij.codeInsight.daemon.DaemonBundle;
 import com.intellij.codeInsight.daemon.GutterIconNavigationHandler;
 import com.intellij.codeInsight.navigation.ListBackgroundUpdaterTask;
 import com.intellij.ide.util.*;
+import com.intellij.openapi.actionSystem.ActionManager;
+import com.intellij.openapi.actionSystem.IdeActions;
+import com.intellij.openapi.actionSystem.Shortcut;
 import com.intellij.openapi.application.ApplicationManager;
+import com.intellij.openapi.keymap.KeymapUtil;
 import com.intellij.openapi.progress.ProgressIndicator;
 import com.intellij.openapi.progress.ProgressManager;
 import com.intellij.openapi.project.DumbService;
@@ -37,7 +41,10 @@ import com.intellij.psi.search.searches.ClassInheritorsSearch;
 import com.intellij.psi.search.searches.FunctionalExpressionSearch;
 import com.intellij.psi.search.searches.OverridingMethodsSearch;
 import com.intellij.psi.util.PsiUtil;
-import com.intellij.util.*;
+import com.intellij.util.ArrayUtil;
+import com.intellij.util.CommonProcessors;
+import com.intellij.util.Function;
+import com.intellij.util.NullableFunction;
 import gnu.trove.THashSet;
 import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
@@ -49,7 +56,31 @@ import java.util.Arrays;
 import java.util.Comparator;
 
 public class MarkerType {
-  public static final MarkerType OVERRIDING_METHOD = new MarkerType(new NullableFunction<PsiElement, String>() {
+
+  private final GutterIconNavigationHandler<PsiElement> handler;
+  private final Function<PsiElement, String> myTooltip;
+
+  public MarkerType(@NotNull Function<PsiElement, String> tooltip, @NotNull final LineMarkerNavigator navigator) {
+    myTooltip = tooltip;
+    handler = new GutterIconNavigationHandler<PsiElement>() {
+      @Override
+      public void navigate(MouseEvent e, PsiElement elt) {
+        navigator.browse(e, elt);
+      }
+    };
+  }
+
+  @NotNull
+  public GutterIconNavigationHandler<PsiElement> getNavigationHandler() {
+    return handler;
+  }
+
+  @NotNull
+  public Function<PsiElement, String> getTooltip() {
+    return myTooltip;
+  }
+
+  static final MarkerType OVERRIDING_METHOD = new MarkerType(new NullableFunction<PsiElement, String>() {
     @Override
     public String fun(PsiElement element) {
       PsiElement parent = getParentMethod(element);
@@ -66,7 +97,7 @@ public class MarkerType {
       PsiMethod method = (PsiMethod)parent;
       navigateToOverridingMethod(e, method, method != element.getParent());
     }
-  }, new ConstantFunction<PsiElement, String>("Go to overriding method(s)"));
+  });
 
   @Nullable
   public static String calculateOverridingMethodTooltip(PsiMethod method, boolean acceptSelf) {
@@ -85,7 +116,16 @@ public class MarkerType {
     else{
       key = sameSignature ? "method.overrides" : "method.overrides.in";
     }
-    return GutterIconTooltipHelper.composeText(superMethods, "", DaemonBundle.message(key));
+    return composeText(superMethods, "", DaemonBundle.message(key), "GotoSuperMethod");
+  }
+
+  private static String composeText(PsiElement[] methods, String start, String pattern, String actionId) {
+    Shortcut[] shortcuts = ActionManager.getInstance().getAction(actionId).getShortcutSet().getShortcuts();
+    Shortcut shortcut = ArrayUtil.getFirstElement(shortcuts);
+    String postfix = "<br><div style='margin-top: 5px'><font size='2'>Click";
+    if (shortcut != null) postfix += " or press " + KeymapUtil.getShortcutText(shortcut);
+    postfix += " to navigate</font></div>";
+    return GutterIconTooltipHelper.composeText(Arrays.asList(methods), start, pattern, postfix);
   }
 
   public static void navigateToOverridingMethod(MouseEvent e, PsiMethod method, boolean acceptSelf) {
@@ -115,7 +155,7 @@ public class MarkerType {
   }
 
   public static final String SEARCHING_FOR_OVERRIDING_METHODS = "Searching for Overriding Methods";
-  public static final MarkerType OVERRIDEN_METHOD = new MarkerType(new NullableFunction<PsiElement, String>() {
+  static final MarkerType OVERRIDDEN_METHOD = new MarkerType(new NullableFunction<PsiElement, String>() {
     @Override
     public String fun(PsiElement element) {
       PsiElement parent = element.getParent();
@@ -132,7 +172,7 @@ public class MarkerType {
       navigateToOverriddenMethod(e, (PsiMethod)parent);
 
     }
-  }, new ConstantFunction<PsiElement, String>("Go to overriding methods"));
+  });
 
   public static String getOverriddenMethodTooltip(final PsiMethod method) {
     PsiElementProcessor.CollectElementsWithLimit<PsiMethod> processor = new PsiElementProcessor.CollectElementsWithLimit<PsiMethod>(5);
@@ -157,8 +197,8 @@ public class MarkerType {
     Arrays.sort(overridings, comparator);
 
     String start = isAbstract ? DaemonBundle.message("method.is.implemented.header") : DaemonBundle.message("method.is.overriden.header");
-    @NonNls String pattern = "&nbsp;&nbsp;&nbsp;&nbsp;{1}";
-    return GutterIconTooltipHelper.composeText(overridings, start, pattern);
+    @NonNls String pattern = "&nbsp;&nbsp;&nbsp;&nbsp;<a href=\"#javaClass/{1}\">{1}</a>";
+    return composeText(overridings, start, pattern, IdeActions.ACTION_GOTO_IMPLEMENTATION);
   }
 
   public static void navigateToOverriddenMethod(MouseEvent e, final PsiMethod method) {
@@ -202,8 +242,8 @@ public class MarkerType {
     PsiElementListNavigator.openTargets(e, overridings, methodsUpdater.getCaption(overridings.length), "Overriding methods of " + method.getName(), renderer, methodsUpdater);
   }
 
-  public static final String SEARCHING_FOR_OVERRIDDEN_METHODS = "Searching for Overridden Methods";
-  public static final MarkerType SUBCLASSED_CLASS = new MarkerType(new NullableFunction<PsiElement, String>() {
+  private static final String SEARCHING_FOR_OVERRIDDEN_METHODS = "Searching for Overridden Methods";
+  static final MarkerType SUBCLASSED_CLASS = new MarkerType(new NullableFunction<PsiElement, String>() {
     @Override
     public String fun(PsiElement element) {
       PsiElement parent = element.getParent();
@@ -219,14 +259,6 @@ public class MarkerType {
       final PsiClass aClass = (PsiClass)parent;
 
       navigateToSubclassedClass(e, aClass);
-    }
-  }, new Function<PsiElement, String>() {
-    @Override
-    public String fun(PsiElement element) {
-      final PsiElement parent = element.getParent();
-      if (!(parent instanceof PsiClass)) return null;
-      final PsiClass aClass = (PsiClass)parent;
-      return aClass.isInterface() ? "Go to implementation(s)" : "Go to subclass(es)";
     }
   });
 
@@ -257,8 +289,8 @@ public class MarkerType {
     String start = aClass.isInterface()
                    ? DaemonBundle.message("interface.is.implemented.by.header")
                    : DaemonBundle.message("class.is.subclassed.by.header");
-    @NonNls String pattern = "&nbsp;&nbsp;&nbsp;&nbsp;{0}";
-    return GutterIconTooltipHelper.composeText(subclasses, start, pattern);
+    @NonNls String pattern = "&nbsp;&nbsp;&nbsp;&nbsp;<a href=\"#javaClass/{0}\">{0}</a>";
+    return composeText(subclasses, start, pattern, IdeActions.ACTION_GOTO_IMPLEMENTATION);
   }
 
   public static void navigateToSubclassedClass(MouseEvent e, final PsiClass aClass) {
@@ -288,40 +320,6 @@ public class MarkerType {
     final SubclassUpdater subclassUpdater = new SubclassUpdater(aClass, renderer);
     Arrays.sort(inheritors, renderer.getComparator());
     PsiElementListNavigator.openTargets(e, inheritors, subclassUpdater.getCaption(inheritors.length), CodeInsightBundle.message("goto.implementation.findUsages.title", aClass.getName()), renderer, subclassUpdater);
-  }
-
-  private final GutterIconNavigationHandler<PsiElement> handler;
-  private final Function<PsiElement, String> myTooltip;
-  private final Function<PsiElement, String> myNavigateActionText;
-
-  public MarkerType(@NotNull Function<PsiElement, String> tooltip, @NotNull final LineMarkerNavigator navigator,
-                    @Nullable Function<PsiElement, String> actionText) {
-    myTooltip = tooltip;
-    handler = new GutterIconNavigationHandler<PsiElement>() {
-      @Override
-      public void navigate(MouseEvent e, PsiElement elt) {
-        navigator.browse(e, elt);
-      }
-    };
-    myNavigateActionText = actionText;
-  }
-
-  public MarkerType(@NotNull Function<PsiElement, String> tooltip, @NotNull final LineMarkerNavigator navigator) {
-    this(tooltip, navigator, null);
-  }
-
-  @NotNull
-  public GutterIconNavigationHandler<PsiElement> getNavigationHandler() {
-    return handler;
-  }
-
-  @NotNull
-  public Function<PsiElement, String> getTooltip() {
-    return myTooltip;
-  }
-
-  public Function<PsiElement, String> getNavigateActionText() {
-    return myNavigateActionText;
   }
 
   private static class SubclassUpdater extends ListBackgroundUpdaterTask {
