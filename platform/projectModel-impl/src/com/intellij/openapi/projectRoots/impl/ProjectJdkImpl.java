@@ -221,8 +221,7 @@ public class ProjectJdkImpl extends UserDataHolderBase implements JDOMExternaliz
     final boolean changes = myHomePath == null? path != null : !myHomePath.equals(path);
     myHomePath = path;
     if (changes) {
-      myVersionString = null; // clear cached value if home path changed
-      myVersionDefined = false;
+      resetVersionString(); // clear cached value if home path changed
     }
   }
 
@@ -288,9 +287,10 @@ public class ProjectJdkImpl extends UserDataHolderBase implements JDOMExternaliz
 
     @Override
     public void addRootSetChangedListener(@NotNull RootSetChangedListener listener) {
-      assert !myListeners.contains(listener);
-      myListeners.add(listener);
-      super.addRootSetChangedListener(listener);
+      if (!myListeners.contains(listener)) {
+        myListeners.add(listener);
+        super.addRootSetChangedListener(listener);
+      }
     }
 
     @Override
@@ -389,7 +389,12 @@ public class ProjectJdkImpl extends UserDataHolderBase implements JDOMExternaliz
   }
 
   public void update() {
-    myRootContainer.update();
+    try {
+      myRootContainer.update();
+    }
+    finally {
+      resetVersionString();
+    }
   }
 
   @Override

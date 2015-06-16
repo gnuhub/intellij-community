@@ -112,6 +112,7 @@ public class GeneralToSMTRunnerEventsConvertor extends GeneralTestEventsProcesso
         fireOnTestingFinished();
       }
     });
+    stopEventProcessing();
   }
 
   @Override
@@ -342,6 +343,15 @@ public class GeneralToSMTRunnerEventsConvertor extends GeneralTestEventsProcesso
       }
     });
   }
+
+  public void onCustomProgressTestFinished() {
+    addToInvokeLater(new Runnable() {
+      public void run() {
+        fireOnCustomProgressTestFinished();
+      }
+    });
+  }
+
 
   public void onCustomProgressTestFailed() {
     addToInvokeLater(new Runnable() {
@@ -625,6 +635,12 @@ public class GeneralToSMTRunnerEventsConvertor extends GeneralTestEventsProcesso
   private void fireOnCustomProgressTestStarted() {
     for (SMTRunnerEventsListener listener : myEventsListeners) {
       listener.onCustomProgressTestStarted();
+    }
+  }
+
+  private void fireOnCustomProgressTestFinished() {
+    for (SMTRunnerEventsListener listener : myEventsListeners) {
+      listener.onCustomProgressTestFinished();
     }
   }
 

@@ -68,7 +68,7 @@ public class SelfElementInfo implements SmartPointerElementInfo {
     }
   }
 
-  protected void setRange(@NotNull Segment range) {
+  void setRange(@NotNull Segment range) {
     mySyncStartOffset = range.getStartOffset();
     mySyncEndOffset = range.getEndOffset();
   }
@@ -145,7 +145,7 @@ public class SelfElementInfo implements SmartPointerElementInfo {
         mySyncMarkerIsValid = false;
       }
     }
-    myRangeMarker = null;  // clear hard ref to avoid leak, hold soft ref for not recreating marker later
+    myRangeMarker = null;  // clear hard ref to avoid leak, but hold soft ref (in myMarkerRef) for not recreating marker too often
   }
 
   @Override
@@ -169,11 +169,11 @@ public class SelfElementInfo implements SmartPointerElementInfo {
     return restoreFileFromVirtual(myVirtualFile, myProject, myLanguage);
   }
 
-  protected static PsiElement findElementInside(@NotNull PsiFile file,
-                                                int syncStartOffset,
-                                                int syncEndOffset,
-                                                @NotNull Class type,
-                                                @NotNull Language language) {
+  static PsiElement findElementInside(@NotNull PsiFile file,
+                                      int syncStartOffset,
+                                      int syncEndOffset,
+                                      @NotNull Class type,
+                                      @NotNull Language language) {
     PsiElement anchor = file.getViewProvider().findElementAt(syncStartOffset, language);
     if (anchor == null) return null;
 
@@ -266,12 +266,14 @@ public class SelfElementInfo implements SmartPointerElementInfo {
     });
   }
 
-  protected int getSyncEndOffset() {
-    return mySyncEndOffset;
+  int getSyncEndOffset() {
+    RangeMarker marker = myRangeMarker;
+    return marker == null || !marker.isValid() ? mySyncEndOffset : marker.getEndOffset();
   }
 
-  protected int getSyncStartOffset() {
-    return mySyncStartOffset;
+  int getSyncStartOffset() {
+    RangeMarker marker = myRangeMarker;
+    return marker == null || !marker.isValid() ? mySyncStartOffset : marker.getStartOffset();
   }
 
   @Override
@@ -288,8 +290,8 @@ public class SelfElementInfo implements SmartPointerElementInfo {
              && myType == otherInfo.myType
              && mySyncMarkerIsValid
              && otherInfo.mySyncMarkerIsValid
-             && mySyncStartOffset == otherInfo.mySyncStartOffset
-             && mySyncEndOffset == otherInfo.mySyncEndOffset
+             && getSyncStartOffset() == otherInfo.getSyncStartOffset()
+             && getSyncEndOffset() == otherInfo.getSyncEndOffset()
         ;
     }
     return ApplicationManager.getApplication().runReadAction(new Computable<Boolean>() {

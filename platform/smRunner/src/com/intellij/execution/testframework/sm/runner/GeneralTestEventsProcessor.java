@@ -98,6 +98,8 @@ public abstract class GeneralTestEventsProcessor implements Disposable {
 
   public abstract void onCustomProgressTestStarted();
 
+  public abstract void onCustomProgressTestFinished();
+
   public abstract void onCustomProgressTestFailed();
 
   // workflow/service methods
@@ -137,6 +139,15 @@ public abstract class GeneralTestEventsProcessor implements Disposable {
     else {
       myTransferToEDTQueue.offer(runnable);
     }
+  }
+
+  public void stopEventProcessing() {
+    UIUtil.invokeLaterIfNeeded(new Runnable() {
+      @Override
+      public void run() {
+        myTransferToEDTQueue.drain();
+      }
+    });
   }
 
 
