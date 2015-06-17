@@ -788,11 +788,11 @@ public abstract class DebuggerUtilsEx extends DebuggerUtils {
     return null;
   }
 
-  public static List<PsiLambdaExpression> collectLambdas(SourcePosition position, final boolean onlyOnTheLine) {
+  public static List<PsiLambdaExpression> collectLambdas(@NotNull SourcePosition position, final boolean onlyOnTheLine) {
     ApplicationManager.getApplication().assertReadAccessAllowed();
     PsiFile file = position.getFile();
-    int line = position.getLine();
-    Document document = PsiDocumentManager.getInstance(file.getProject()).getDocument(file);
+    final int line = position.getLine();
+    final Document document = PsiDocumentManager.getInstance(file.getProject()).getDocument(file);
     if (document == null || line >= document.getLineCount()) {
       return Collections.emptyList();
     }
@@ -812,8 +812,7 @@ public abstract class DebuggerUtilsEx extends DebuggerUtils {
       @Override
       public void visitLambdaExpression(PsiLambdaExpression expression) {
         super.visitLambdaExpression(expression);
-        PsiElement body = expression.getBody();
-        if (!onlyOnTheLine || (body != null && lineRange.intersects(body.getTextRange()))) {
+        if (!onlyOnTheLine || getFirstElementOnTheLine(expression, document, line) != null) {
           lambdas.add(expression);
         }
       }
@@ -825,7 +824,7 @@ public abstract class DebuggerUtilsEx extends DebuggerUtils {
       lambdas.add((PsiLambdaExpression)method);
     }
     for (PsiElement sibling = getNextElement(element); sibling != null; sibling = getNextElement(sibling)) {
-      if (!lineRange.intersects(sibling.getTextRange())) {
+      if (!intersects(lineRange, sibling)) {
         break;
       }
       sibling.accept(lambdaCollector);
@@ -833,20 +832,34 @@ public abstract class DebuggerUtilsEx extends DebuggerUtils {
     return lambdas;
   }
 
+  public static boolean intersects(@NotNull TextRange range, @NotNull PsiElement elem) {
+    TextRange elemRange = elem.getTextRange();
+    return elemRange != null && elemRange.intersects(range);
+  }
+
   @Nullable
   public static PsiElement getFirstElementOnTheLine(PsiLambdaExpression lambda, Document document, int line) {
     ApplicationManager.getApplication().assertReadAccessAllowed();
-    TextRange lineRange = new TextRange(document.getLineStartOffset(line), document.getLineEndOffset(line));
-    if (!lineRange.intersects(lambda.getTextRange())) return null;
+    TextRange lineRange = DocumentUtil.getLineTextRange(document, line);
+    if (!intersects(lineRange, lambda)) return null;
     PsiElement body = lambda.getBody();
+    if (body == null || !intersects(lineRange, body)) return null;
     if (body instanceof PsiCodeBlock) {
       for (PsiStatement statement : ((PsiCodeBlock)body).getStatements()) {
-        if (lineRange.intersects(statement.getTextRange())) {
+        if (intersects(lineRange, statement)) {
           return statement;
         }
       }
+      return null;
     }
     return body;
+  }
+
+  public static boolean inTheMethod(@NotNull SourcePosition pos, @NotNull PsiElement method) {
+    PsiElement elem = pos.getElementAt();
+    if (elem == null) return false;
+    NavigatablePsiElement elemMethod = PsiTreeUtil.getParentOfType(elem, PsiMethod.class, PsiLambdaExpression.class);
+    return Comparing.equal(elemMethod, method);
   }
 
   public static boolean inTheSameMethod(@NotNull SourcePosition pos1, @NotNull SourcePosition pos2) {
