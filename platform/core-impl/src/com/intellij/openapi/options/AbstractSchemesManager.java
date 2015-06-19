@@ -26,9 +26,9 @@ import java.util.*;
 public abstract class AbstractSchemesManager<T extends Scheme, E extends ExternalizableScheme> extends SchemesManager<T, E> {
   private static final Logger LOG = Logger.getInstance(AbstractSchemesManager.class);
 
-  protected final List<T> mySchemes = new ArrayList<T>();
-  private volatile T myCurrentScheme;
-  private String myCurrentSchemeName;
+  protected final ArrayList<T> mySchemes = new ArrayList<T>();
+  protected volatile T myCurrentScheme;
+  protected String myCurrentSchemeName;
 
   @Override
   public void addNewScheme(@NotNull T scheme, boolean replaceExisting) {
@@ -37,6 +37,9 @@ public abstract class AbstractSchemesManager<T extends Scheme, E extends Externa
       T existingScheme = mySchemes.get(i);
       if (existingScheme.getName().equals(scheme.getName())) {
         toReplace = i;
+        if (replaceExisting && existingScheme instanceof ExternalizableScheme && scheme instanceof ExternalizableScheme) {
+          swapInfo((ExternalizableScheme)scheme, (ExternalizableScheme)existingScheme);
+        }
         break;
       }
     }
@@ -51,8 +54,12 @@ public abstract class AbstractSchemesManager<T extends Scheme, E extends Externa
       renameScheme((ExternalizableScheme)scheme, UniqueNameGenerator.generateUniqueName(scheme.getName(), collectExistingNames(mySchemes)));
       mySchemes.add(scheme);
     }
+
     schemeAdded(scheme);
     checkCurrentScheme(scheme);
+  }
+
+  protected void swapInfo(@NotNull ExternalizableScheme scheme, @NotNull ExternalizableScheme existingScheme) {
   }
 
   protected void checkCurrentScheme(@NotNull Scheme scheme) {
@@ -73,6 +80,10 @@ public abstract class AbstractSchemesManager<T extends Scheme, E extends Externa
 
   @Override
   public void clearAllSchemes() {
+    doRemoveAll();
+  }
+
+  protected void doRemoveAll() {
     for (T myScheme : mySchemes) {
       schemeDeleted(myScheme);
     }

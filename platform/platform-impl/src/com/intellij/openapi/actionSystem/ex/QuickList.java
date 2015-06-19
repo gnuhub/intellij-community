@@ -15,10 +15,10 @@
  */
 package com.intellij.openapi.actionSystem.ex;
 
-import com.intellij.openapi.options.ExternalInfo;
-import com.intellij.openapi.options.ExternalizableScheme;
+import com.intellij.openapi.options.ExternalizableSchemeAdapter;
 import com.intellij.openapi.util.Comparing;
 import com.intellij.openapi.util.text.StringUtil;
+import com.intellij.util.ArrayUtil;
 import org.jdom.Element;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -26,7 +26,7 @@ import org.jetbrains.annotations.Nullable;
 import java.util.Arrays;
 import java.util.List;
 
-public class QuickList implements ExternalizableScheme {
+public class QuickList extends ExternalizableSchemeAdapter {
   public static final String QUICK_LIST_PREFIX = "QuickList.";
   public static final String SEPARATOR_ID = QUICK_LIST_PREFIX + "$Separator$";
 
@@ -38,26 +38,21 @@ public class QuickList implements ExternalizableScheme {
 
   private String myName;
   private String myDescription;
-  private String[] myActionIds;
+  private String[] myActionIds = ArrayUtil.EMPTY_STRING_ARRAY;
   private boolean myReadonly;
-  private final ExternalInfo myExternalInfo = new ExternalInfo();
 
   /**
    * With read external to be called immediately after in mind
    */
   QuickList() {
+    myName = "";
   }
 
-  public QuickList(@NotNull String displayName, @Nullable String description, String[] actionIds, boolean isReadonly) {
-    myName = displayName;
+  public QuickList(@NotNull String name, @Nullable String description, String[] actionIds, boolean isReadonly) {
+    myName = name;
     myDescription = StringUtil.nullize(description);
     myActionIds = actionIds;
     myReadonly = isReadonly;
-  }
-
-  @Deprecated
-  public String getDisplayName() {
-    return myName;
   }
 
   @Override
@@ -75,8 +70,16 @@ public class QuickList implements ExternalizableScheme {
     return myDescription;
   }
 
+  public void setDescription(@Nullable String value) {
+    myDescription = StringUtil.nullize(value);
+  }
+
   public String[] getActionIds() {
     return myActionIds;
+  }
+
+  public void setActionIds(@NotNull String[] value) {
+    myActionIds = value;
   }
 
   public boolean equals(Object o) {
@@ -124,12 +127,6 @@ public class QuickList implements ExternalizableScheme {
     for (int i = 0, n = actionElements.size(); i < n; i++) {
       myActionIds[i] = actionElements.get(i).getAttributeValue(ID_TAG);
     }
-  }
-
-  @Override
-  @NotNull
-  public ExternalInfo getExternalInfo() {
-    return myExternalInfo;
   }
 
   @Override
