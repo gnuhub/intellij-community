@@ -95,6 +95,13 @@ public abstract class Filter<T extends AbstractTestProxy> {
     }
   };
 
+  public static final Filter HAS_PASSED = new Filter() {
+    @Override
+    public boolean shouldAccept(final AbstractTestProxy test) {
+      return test.hasPassedTests();
+    }
+  };
+
   public static final Filter FAILED_OR_INTERRUPTED = new Filter() {
     @Override
     public boolean shouldAccept(final AbstractTestProxy test) {
@@ -119,6 +126,13 @@ public abstract class Filter<T extends AbstractTestProxy> {
       return true;
     }
   });
+
+  public static final Filter SUCCESSFUL_CONFIGS = new Filter() {
+    @Override
+    public boolean shouldAccept(AbstractTestProxy test) {
+      return !test.isConfig() || !test.isPassed();
+    }
+  };
 
   private static class AndFilter extends Filter {
     private final Filter myFilter1;

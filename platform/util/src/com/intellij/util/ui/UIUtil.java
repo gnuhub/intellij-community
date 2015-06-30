@@ -1291,7 +1291,7 @@ public class UIUtil {
 
   @SuppressWarnings({"HardCodedStringLiteral"})
   public static boolean isUnderAquaBasedLookAndFeel() {
-    return SystemInfo.isMac && (isUnderAquaLookAndFeel() || isUnderDarcula());
+    return SystemInfo.isMac && (isUnderAquaLookAndFeel() || isUnderDarcula() || isUnderIntelliJLaF());
   }
 
   @SuppressWarnings({"HardCodedStringLiteral"})
@@ -1982,9 +1982,10 @@ public class UIUtil {
 
   public static void drawStringWithHighlighting(Graphics g, String s, int x, int y, Color foreground, Color highlighting) {
     g.setColor(highlighting);
-    for (int i = x - 1; i <= x + 1; i++) {
-      for (int j = y - 1; j <= y + 1; j++) {
-        g.drawString(s, i, j);
+    boolean isRetina = isRetina();
+    for (float i = x - 1; i <= x + 1; i += isRetina ? .5 : 1) {
+      for (float j = y - 1; j <= y + 1; j += isRetina ? .5 : 1) {
+        ((Graphics2D)g).drawString(s, i, j);
       }
     }
     g.setColor(foreground);
@@ -2043,6 +2044,16 @@ public class UIUtil {
     while (eachParent != null) {
       if (condition.value(eachParent)) return eachParent;
       eachParent = eachParent.getParent();
+    }
+    return null;
+  }
+
+  public static <T extends JComponent> T findParentByClass(@NotNull Component c, Class<T> cls) {
+    for (Component component = c; component != null; component = component.getParent()) {
+      if (cls.isAssignableFrom(component.getClass())) {
+        @SuppressWarnings({"unchecked"}) final T t = (T)component;
+        return t;
+      }
     }
     return null;
   }
@@ -3392,5 +3403,14 @@ public class UIUtil {
       }
     }
     return false;
+  }
+
+  public static void setColumns(JTextComponent textComponent, int columns) {
+    if (textComponent instanceof JTextField) {
+      ((JTextField)textComponent).setColumns(columns);
+    }
+    if (textComponent instanceof JTextArea) {
+      ((JTextArea)textComponent).setColumns(columns);
+    }
   }
 }
